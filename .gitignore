@@ -1,6 +1,8 @@
 # Track only authored configuration; everything else is ignored by default.
 /*
-!/.gitignore`n!/.gitattributes`n!/AGENTS.md
+!/.gitignore
+!/.gitattributes
+!/AGENTS.md
 !/settings.json
 !/keybindings.json
 !/open-tui.json
