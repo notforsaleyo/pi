@@ -108,7 +108,7 @@ export default function (pi: ExtensionAPI) {
 	const render = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
 		const m = MODES[mode];
-		// input-box.ts 가 읽어서 입력창 테두리/색에 반영
+		// local-packages/nofs-theme/input-box.ts 가 읽어서 입력창 테두리/색에 반영
 		g.__piAgentMode = { id: mode, label: m.label, icon: m.icon, rgb: m.rgb, style: m.style };
 		if (g.__piInputBox?.active) {
 			ctx.ui.setWidget("agent-mode", undefined);

@@ -54,18 +54,24 @@ function rainbow(text: string): string {
 	return bold([...text].map((c, i) => fg(RAINBOW[i % RAINBOW.length]!, c)).join(""));
 }
 
-function thinkingLabel(level: string): string {
+// medium 부터 번개 1개, 이후 단계마다 1개씩 추가. footer.ts 에서도 재사용
+const BOLT = "\uf0e7";
+const BOLT_COUNT: Record<string, number> = { medium: 1, high: 2, xhigh: 3, max: 4 };
+
+export function thinkingLabel(level: string): string {
+	const bolts = BOLT.repeat(BOLT_COUNT[level] ?? 0);
+	const text = bolts ? `${bolts} ${level}` : level;
 	switch (level) {
 		case "low":
-			return fg([56, 150, 60], level);
+			return fg([56, 150, 60], text);
 		case "medium":
-			return fg([0, 150, 170], level);
+			return fg([0, 150, 170], text);
 		case "high":
-			return bold(fg([190, 140, 0], level));
+			return bold(fg([190, 140, 0], text));
 		case "xhigh":
-			return bold(fg([220, 0, 0], level));
+			return bold(fg([220, 0, 0], text));
 		case "max":
-			return animatedLabel(level);
+			return animatedLabel(text);
 		default:
 			return `\x1b[2m${level}\x1b[22m`;
 	}

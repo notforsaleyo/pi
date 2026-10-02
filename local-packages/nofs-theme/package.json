@@ -1,0 +1,8 @@
+{
+  "name": "nofs-theme",
+  "private": true,
+  "description": "Input box, chat message box and one-line footer. Loaded as a local package so it installs after other packages (e.g. pi-usage) that also call setFooter.",
+  "pi": {
+    "extensions": ["./input-box.ts", "./footer.ts"]
+  }
+}

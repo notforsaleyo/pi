@@ -32,7 +32,8 @@
     "npm:@sreetej510/pi-usage",
     "npm:pi-zentui",
     "npm:billion-context-pi",
-    "npm:@pi-unipi/notify"
+    "npm:@pi-unipi/notify",
+    "./local-packages/nofs-theme"
   ],
   "autocompleteMaxVisible": 5,
   "defaultTools": [
