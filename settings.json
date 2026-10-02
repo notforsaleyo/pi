@@ -1,0 +1,48 @@
+{
+  "lastChangelogVersion": "1.0.0",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-5-5",
+  "deviceId": "65b6fc87-9fa1-45df-b4ca-6cf127c54af9",
+  "enabledModels": [
+    "openai-codex/gpt-6-astra",
+    "openai-codex/gpt-6-luna",
+    "openai-codex/gpt-6.1-sol",
+    "anthropic/claude-opus-5-5",
+    "anthropic/claude-sonnet-5-5"
+  ],
+  "fullscreenScrollbar": "always",
+  "theme": "system",
+  "fullscreenWheelScrollLines": "auto",
+  "tuiMode": "fullscreen",
+  "showCacheMissNotices": true,
+  "markdown": {
+    "mermaid": "streaming"
+  },
+  "hideThinkingBlock": true,
+  "terminal": {
+    "showTerminalProgress": true,
+    "clearOnShrink": false
+  },
+  "showHardwareCursor": false,
+  "enableSkillCommands": true,
+  "packages": [
+    "npm:pi-web-search",
+    "npm:@juicesharp/rpiv-ask-user-question",
+    "npm:@gotgenes/pi-anthropic-auth",
+    "npm:@sreetej510/pi-usage",
+    "npm:pi-zentui",
+    "npm:billion-context-pi",
+    "npm:@pi-unipi/notify"
+  ],
+  "autocompleteMaxVisible": 5,
+  "defaultTools": [
+    "+codemode"
+  ],
+  "warnings": {
+    "anthropicExtraUsage": false
+  },
+  "cacheWarming": "idle",
+  "quietStartup": true,
+  "doubleEscapeAction": "none",
+  "fullscreenExitOutput": "transcript"
+}

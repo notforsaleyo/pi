@@ -1,0 +1,31 @@
+# Track only authored configuration; everything else is ignored by default.
+/*
+!/.gitignore
+!/AGENTS.md
+!/settings.json
+!/keybindings.json
+!/open-tui.json
+!/zentui.json
+!/extensions/
+!/skills/
+!/backlog/
+
+# Conversations are never backed up.
+sessions/
+*.jsonl
+
+# Credentials, caches, installs and machine-local state.
+auth.json
+*.db
+*.db-*
+node_modules/
+npm/
+bin/
+backups/
+usage-cache.json
+models-store.json
+.billion-context-*
+.env
+.env.*
+*.log
+*.tmp
