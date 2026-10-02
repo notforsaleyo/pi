@@ -30,7 +30,6 @@
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@gotgenes/pi-anthropic-auth",
     "npm:@sreetej510/pi-usage",
-    "npm:pi-zentui",
     "npm:billion-context-pi",
     "npm:@pi-unipi/notify",
     "./local-packages/nofs-theme"

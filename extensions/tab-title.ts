@@ -2,9 +2,14 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // Tab title: "π - <session name>". Re-applied after events that may reset it.
 export default function (pi: ExtensionAPI) {
+  // ctx/pi become stale after reload or session replacement; a delayed call must not throw.
   const apply = (ctx: { ui: { setTitle(t: string): void } }) => {
-    const name = pi.getSessionName();
-    ctx.ui.setTitle(name ? `π - ${name}` : "π");
+    try {
+      const name = pi.getSessionName();
+      ctx.ui.setTitle(name ? `π - ${name}` : "π");
+    } catch {
+      // stale context: ignore
+    }
   };
 
   // pi's own title update may run after our handler, so re-apply shortly after too.
