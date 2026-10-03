@@ -13,11 +13,7 @@ import { checkReadOnlyShell } from "./readonly-shell.ts";
 
 type ModeId = "plan" | "spec" | "bash";
 
-const READ = ["read", "grep", "find", "ls"];
 const WRITE = ["edit", "write"];
-const CODE = ["codemode"]; // JS 스크립트로 다른 도구를 호출
-const BUILTIN = new Set([...READ, ...WRITE, "bash", "powershell"]); // 세션 시작 시 항상 켜 두는 기본 도구
-const GATED = new Set([...BUILTIN, ...CODE]); // 모드별로 허용 여부를 검사하는 도구
 const SPEC_DIR = "openspec";
 const README_HINT = "~/.pi/agent/local-packages/nofs-agent-modes/readonly-shell.ts (see README.md there)";
 
@@ -26,7 +22,7 @@ const esc = (codes: string) => (s: string) => `\x1b[${codes}m${s}\x1b[0m`;
 interface Mode {
 	label: string;
 	icon: string;
-	tools: string[]; // plan/spec 의 bash 는 읽기 전용 명령만 통과
+	blocked: string[]; // 이 모드에서 막는 도구. 나머지는 허용 (plan/spec 의 bash 는 읽기 전용 명령만 통과)
 	style: (s: string) => string;
 	rgb: [number, number, number]; // 입력창/채팅 tint 용 기준색
 }
@@ -35,21 +31,21 @@ const MODES: Record<ModeId, Mode> = {
 	plan: {
 		label: "PLAN",
 		icon: "\uf0eb", // lightbulb
-		tools: [...READ, "bash", ...CODE],
+		blocked: [...WRITE, "powershell"],
 		style: esc("1;38;2;20;20;20;48;2;97;175;239"), // bold, 검정 글씨 / 파랑 배경
 		rgb: [97, 175, 239],
 	},
 	spec: {
 		label: "SPEC",
 		icon: "\uf02d", // book
-		tools: [...READ, ...WRITE, "bash", ...CODE],
+		blocked: ["powershell"], // edit/write 는 ./openspec/ 안에서만
 		style: esc("1;4;38;2;20;20;20;48;2;198;120;221"), // bold+underline, 보라 배경
 		rgb: [198, 120, 221],
 	},
 	bash: {
 		label: "BASH",
 		icon: "\uf120", // terminal
-		tools: [...GATED],
+		blocked: [],
 		style: esc("1;3;38;2;255;255;255;48;2;224;108;117"), // bold+italic, 흰 글씨 / 빨강 배경
 		rgb: [224, 108, 117],
 	},
@@ -110,21 +106,12 @@ export default function (pi: ExtensionAPI) {
 		}
 	};
 
-	// 예전 버전이 모드별로 빼 둔 기본 도구를 한 번만 복구 (이후로는 도구 목록을 건드리지 않음)
-	const restoreTools = () => {
-		const active = pi.getActiveTools();
-		const available = new Set(pi.getAllTools().map((t) => t.name));
-		const missing = [...BUILTIN].filter((t) => available.has(t) && !active.includes(t));
-		if (missing.length) pi.setActiveTools([...active, ...missing]);
-	};
-
 	pi.on("session_start", (_event, ctx) => {
 		mode = DEFAULT;
 		for (const e of ctx.sessionManager.getEntries() as any[]) {
 			// 삭제된 모드(예: edit)가 기록돼 있으면 무시 → 기본값 유지
 			if (e.type === "custom" && e.customType === ENTRY && e.data?.mode in MODES) mode = e.data.mode;
 		}
-		restoreTools();
 		render(ctx);
 	});
 
@@ -156,7 +143,7 @@ export default function (pi: ExtensionAPI) {
 		const m = MODES[mode];
 		const name = event.toolName;
 		const input = (event.input ?? {}) as any;
-		if (GATED.has(name) && !m.tools.includes(name)) {
+		if (m.blocked.includes(name)) {
 			return {
 				block: true,
 				reason: `${name} is blocked in ${m.label} mode (set by the user). Do not retry; continue within the mode's limits or ask the user to switch modes.`,

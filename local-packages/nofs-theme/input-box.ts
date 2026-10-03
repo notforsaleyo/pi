@@ -6,76 +6,33 @@ import {
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { type EditorTheme, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { ANIM_MS, animatedLabel, bold, dim, fg, ORANGE, type RGB, RED, thinkingLabel } from "./colors.ts";
 
-// 직각 네모 입력창 + 채팅 내 메시지 박스
-//   ┏━  PLAN ── ctx 11% ───────────────────────────┐
-//   │                                                │
-//   │ 입력 내용                                      │
-//   │                                                │
-//   │ gpt-6.1-sol  openai-codex  high                │
-//   └────────────────────────────────────────────────┘
-// - 좌측 상단: 에이전트 모드 라벨(agent-modes.ts) + 컨텍스트 사용률
-// - 테두리: 굵은 선, 모드 색을 어둡게 (좌우 세로선 없음)
-// - 안쪽 배경: 모드 색을 연하게 tint (라이트 테마 기준)
-// - 채팅의 내 메시지: 색 없이 검은 굵은 박스, 위아래 여백
-// - 추론 강도: low 초록 / medium 청록 / high 굵은 노랑 / xhigh 굵은 빨강 / max 굵은 무지개
+// 입력창 + 채팅 내 메시지 박스 (위아래 가로선만, 좌우 세로선 없음 → 복사할 때 안 끼게)
+//   ━━  PLAN  ━━ ctx 11% ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+//   입력 내용
+//
+//   claude-opus-4  anthropic  high
+//   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// - 위 테두리: 에이전트 모드 라벨(nofs-agent-modes 가 globalThis.__piAgentMode 로 전달) + 컨텍스트 사용률
+// - 테두리는 모드 색, 안쪽 배경은 모드 색을 연하게 tint (라이트 테마 기준)
+// - 채팅의 내 메시지: 검은 가로선 + 옅은 회색 배경, 위 테두리에 무지개 사용자 이름
 
-type RGB = [number, number, number];
-
-const BOX = { tl: "┏", tr: "┓", bl: "┗", br: "┛", h: "━", v: "┃" };
+const LINE = "━";
 const TINT = 0.8; // 0 = 원색, 1 = 흰색. 높을수록 연함
+const USER_NAME = "notforsaleyo";
 
 // 컨텍스트 경고 기준 (%). Claude 처럼 컨텍스트 큰 모델 기준으로 낮게 잡음
-const CTX_WARN = 8; // 노랑
-const CTX_HIGH = 15; // 주황
-const CTX_CRIT = 25; // 빨강
-
-const inputBorder = (rgb?: RGB) => (s: string) =>
-	rgb
-		? `\x1b[38;2;${rgb.join(";")}m${s}\x1b[39m` // 라벨과 같은 색
-		: `\x1b[37m${s}\x1b[39m`;
-const MSG_BORDER = (s: string) => `\x1b[30m${s}\x1b[39m`; // 터미널 테마 black
-const MSG_BG = "\x1b[48;2;238;238;238m"; // 옅은 회색 배경
-
-const RAINBOW: RGB[] = [
-	[230, 57, 70],
-	[244, 140, 6],
-	[214, 170, 0],
-	[56, 176, 0],
-	[0, 150, 199],
-	[86, 90, 220],
-	[176, 70, 200],
+const CTX_LEVELS: [number, RGB][] = [
+	[25, RED],
+	[15, ORANGE],
+	[8, [190, 150, 0]],
 ];
 
-const fg = (rgb: RGB, s: string) => `\x1b[38;2;${rgb[0]};${rgb[1]};${rgb[2]}m${s}\x1b[39m`;
-const bold = (s: string) => `\x1b[1m${s}\x1b[22m`;
-
-function rainbow(text: string): string {
-	return bold([...text].map((c, i) => fg(RAINBOW[i % RAINBOW.length]!, c)).join(""));
-}
-
-// medium 부터 번개 1개, 이후 단계마다 1개씩 추가. footer.ts 에서도 재사용
-const BOLT = "\uf0e7";
-const BOLT_COUNT: Record<string, number> = { medium: 1, high: 2, xhigh: 3, max: 4 };
-
-export function thinkingLabel(level: string): string {
-	const bolts = BOLT.repeat(BOLT_COUNT[level] ?? 0);
-	const text = bolts ? `${bolts} ${level}` : level;
-	switch (level) {
-		case "low":
-			return fg([56, 150, 60], text);
-		case "medium":
-			return fg([0, 150, 170], text);
-		case "high":
-			return bold(fg([190, 140, 0], text));
-		case "xhigh":
-			return bold(fg([220, 0, 0], text));
-		case "max":
-			return animatedLabel(text);
-		default:
-			return `\x1b[2m${level}\x1b[22m`;
-	}
-}
+const inputBorder = (rgb?: RGB) => (s: string) => (rgb ? fg(rgb, s) : `\x1b[37m${s}\x1b[39m`);
+const MSG_BORDER = (s: string) => `\x1b[30m${s}\x1b[39m`; // 터미널 테마 black
+const MSG_BG = "\x1b[48;2;238;238;238m"; // 옅은 회색 배경
 
 function tintBg(rgb?: RGB): string {
 	if (!rgb) return "";
@@ -83,26 +40,7 @@ function tintBg(rgb?: RGB): string {
 	return `\x1b[48;2;${r};${g};${b}m`;
 }
 
-// USER 라벨: 무지개색이 시간에 따라 흐르고, 밝은 하이라이트가 지나감 (rainbow-editor 예제와 같은 방식)
-const ANIM_MS = 100;
-function animatedLabel(text: string): string {
-	const t = Date.now() / ANIM_MS;
-	const shift = Math.floor(t / 2);
-	const shine = Math.floor(t) % (text.length + 8) - 2; // 지나가는 하이라이트 위치 (일부 구간은 쉼)
-	return bold(
-		[...text]
-			.map((c, i) => {
-				const base = RAINBOW[(i + shift) % RAINBOW.length]!;
-				const d = Math.abs(i - shine);
-				const f = d === 0 ? 0.6 : d === 1 ? 0.3 : 0;
-				return fg(base.map((v) => Math.round(v + (255 - v) * f)) as RGB, c);
-			})
-			.join(""),
-	);
-}
-
-// 입력창 한 줄. 좌우 세로선/왼쪽 공백 없음(복사 시 안 끼게), 배경 tint 만 칠함.
-// 오른쪽 공백은 줄 끝이라 복사할 때 보통 잘림. 중간에 리셋이 나와도 tint 를 다시 칠함
+// 박스 한 줄: 배경만 칠함. 오른쪽 공백은 줄 끝이라 복사할 때 보통 잘림. 중간에 리셋이 나와도 배경을 다시 칠함
 function boxRow(text: string, inner: number, bg: string): string {
 	const fitted = truncateToWidth(text, inner, "");
 	const pad = " ".repeat(Math.max(0, inner + 1 - visibleWidth(fitted)));
@@ -113,24 +51,20 @@ function boxRow(text: string, inner: number, bg: string): string {
 const ORIG = Symbol.for("pi.inputBox.userMessageRender");
 
 function renderUserMessage(inst: any, width: number): string[] {
-	const inner = width - 1; // 내용 + 오른쪽 공백 1칸 (좌우 세로선 없음)
-	const text: string = String(inst.text ?? "");
+	const inner = width - 1; // 내용 + 오른쪽 공백 1칸
 	const md = inst.children?.[0]?.children?.[0];
 	const lines: string[] =
-		md && typeof md.render === "function" ? [...md.render(inner)] : wrapTextWithAnsi(text, inner);
+		md && typeof md.render === "function" ? [...md.render(inner)] : wrapTextWithAnsi(String(inst.text ?? ""), inner);
 	while (lines.length > 1 && lines[lines.length - 1]!.replace(/\x1b\[[0-9;]*m/g, "").trim() === "") lines.pop();
 
-	const row = (l: string) => {
-		return boxRow(l, inner, MSG_BG);
-	};
-	const name = "notforsaleyo";
+	const row = (l: string) => boxRow(l, inner, MSG_BG);
 	return [
-		// ━━ name ━━━━━ : 라벨이 윗 테두리 안에 들어감
-		`${MSG_BORDER(`${BOX.h}${BOX.h} `)}${animatedLabel(name)}${MSG_BORDER(` ${BOX.h.repeat(Math.max(0, width - name.length - 5))}`)}`,
+		// ━━ name ━━━━━ : 이름이 위 테두리 안에 들어감
+		`${MSG_BORDER(`${LINE}${LINE} `)}${animatedLabel(USER_NAME)}${MSG_BORDER(` ${LINE.repeat(Math.max(0, width - USER_NAME.length - 5))}`)}`,
 		row(""),
 		...(lines.length ? lines : [""]).map(row),
 		row(""),
-		MSG_BORDER(BOX.h.repeat(width)),
+		MSG_BORDER(LINE.repeat(width)),
 	];
 }
 
@@ -162,8 +96,9 @@ export default function (pi: ExtensionAPI) {
 		if (!ctx.hasUI) return;
 		const shared = { active: true, requestRender: undefined as undefined | (() => void) };
 		g.__piInputBox = shared;
+		// 채팅의 사용자 이름(과 추론 강도 max 라벨) 애니메이션용. footer 도 같이 다시 그려지므로 footer 는 계산을 캐시함
 		if (g.__piUserLabelTimer) clearInterval(g.__piUserLabelTimer);
-		g.__piUserLabelTimer = setInterval(() => shared.requestRender?.(), ANIM_MS); // USER 라벨 애니메이션용
+		g.__piUserLabelTimer = setInterval(() => shared.requestRender?.(), ANIM_MS);
 		ctx.ui.setWidget("agent-mode", undefined); // 모드 라벨은 테두리에 표시
 
 		class InputBox extends CustomEditor {
@@ -174,13 +109,11 @@ export default function (pi: ExtensionAPI) {
 
 			private contextLabel(): string {
 				const usage = ctx.getContextUsage();
-				if (!usage || usage.percent === null || usage.percent === undefined) return "\x1b[2mctx ?\x1b[22m";
+				if (usage?.percent == null) return dim("ctx ?");
 				const pct = Math.round(usage.percent);
 				const text = `ctx ${pct}%`;
-				if (pct >= CTX_CRIT) return bold(fg([220, 0, 0], text));
-				if (pct >= CTX_HIGH) return bold(fg([230, 110, 0], text));
-				if (pct >= CTX_WARN) return bold(fg([190, 150, 0], text));
-				return bold(text);
+				const color = CTX_LEVELS.find(([min]) => pct >= min)?.[1];
+				return bold(color ? fg(color, text) : text);
 			}
 
 			render(width: number): string[] {
@@ -191,24 +124,23 @@ export default function (pi: ExtensionAPI) {
 				const content = raw.slice(1, 1 + visibleCount);
 				const below = raw.slice(2 + visibleCount); // 자동완성 목록
 
-								const mode = g.__piAgentMode as
+				const mode = g.__piAgentMode as
 					| { label: string; icon: string; rgb: RGB; style: (s: string) => string }
 					| undefined;
 				const bg = tintBg(mode?.rgb);
 				const border = inputBorder(mode?.rgb);
 				const row = (text: string) => boxRow(text, inner, bg);
 
-				// 위 테두리: ━━ [MODE] ━━ ctx N% ━━━━━━━━ (모서리도 일자 글리프)
+				// 위 테두리: ━━ [MODE] ━━ ctx N% ━━━━━━━━
 				const modeLabel = mode ? mode.style(` ${mode.icon} ${mode.label} `) : "";
-				const left = `${border(`${BOX.h}${BOX.h} `)}${modeLabel}${border(` ${BOX.h}${BOX.h} `)}${this.contextLabel()}${border(" ")}`;
-				const fill = Math.max(1, width - visibleWidth(left));
-				const top = `${left}${border(BOX.h.repeat(fill))}`;
-				const bottom = border(BOX.h.repeat(width));
+				const left = `${border(`${LINE}${LINE} `)}${modeLabel}${border(` ${LINE}${LINE} `)}${this.contextLabel()}${border(" ")}`;
+				const top = `${left}${border(LINE.repeat(Math.max(1, width - visibleWidth(left))))}`;
+				const bottom = border(LINE.repeat(width));
 
 				const model = ctx.model;
 				const meta = model
-					? `${bold(model.name ?? model.id)}  \x1b[2m${model.provider}\x1b[22m  ${thinkingLabel(pi.getThinkingLevel())}`
-					: "\x1b[2mno model\x1b[22m";
+					? `${bold(model.name ?? model.id)}  ${dim(model.provider)}  ${thinkingLabel(pi.getThinkingLevel())}`
+					: dim("no model");
 
 				return [top, row(""), ...content.map(row), row(""), row(meta), bottom, ...below.map((l) => `  ${l}`)];
 			}
