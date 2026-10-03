@@ -44,5 +44,7 @@
   "cacheWarming": "idle",
   "quietStartup": true,
   "doubleEscapeAction": "none",
-  "fullscreenExitOutput": "transcript"
+  "fullscreenExitOutput": "transcript",
+  "editorPaddingX": 0,
+  "outputPad": 0
 }
