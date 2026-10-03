@@ -32,6 +32,7 @@
     "npm:@sreetej510/pi-usage",
     "npm:billion-context-pi",
     "npm:@pi-unipi/notify",
+    "./local-packages/nofs-agent-modes",
     "./local-packages/nofs-theme"
   ],
   "autocompleteMaxVisible": 5,
