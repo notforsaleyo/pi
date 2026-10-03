@@ -1,126 +1,61 @@
 // PLAN/SPEC 모드에서 bash 명령이 '읽기 전용'인지 판별한다.
-// 샌드박스가 아니라 실수 방지용: 흔히 일어날 법한 쓰기/실행만 잡고, 나머지는 허용 목록에서 빠지는 것으로 막는다.
+// 샌드박스가 아니라 실수 방지용: 흔한 쓰기/실행만 잡고, 나머지는 허용 목록에서 빠지는 것으로 막는다.
 // 반환: null = 통과, 문자열 = 차단 사유
 
 const ALLOWED = new Set(
-	"ls cd pwd cat head tail wc stat du tree which echo printf date basename dirname realpath diff cmp grep egrep fgrep rg jq sort find git".split(
-		" ",
-	),
+	"ls cd pwd cat head tail wc stat du tree which echo printf date basename dirname realpath diff cmp grep egrep fgrep rg jq sort find git".split(" "),
 );
+
+// 명령별로 막는 인자 (인자 하나하나에 검사)
+const DENY_ARG: Record<string, RegExp> = {
+	find: /^-(exec|execdir|ok|okdir|delete|fprint\w*|fls)$/,
+	sort: /^(--output|-\w*o)/,
+	tail: /^(--follow|-\w*[fF])/,
+	git: /^(--output|--ext-diff)/,
+};
 
 // 통째로 허용하는 git 서브커맨드
 const GIT_READ = new Set(
-	"log show diff status blame shortlog describe rev-parse rev-list ls-files ls-tree ls-remote merge-base name-rev for-each-ref show-ref diff-tree cat-file grep".split(
-		" ",
-	),
+	"log show diff status blame shortlog describe rev-parse rev-list ls-files ls-tree ls-remote merge-base name-rev for-each-ref show-ref diff-tree cat-file grep".split(" "),
 );
 
-// 따옴표 안과 백슬래시 이스케이프를 같은 길이의 'x' 로 가린다 (구분자/리다이렉션 오인 방지)
-function mask(s: string): string {
-	let out = "";
-	let q: string | null = null;
-	for (let i = 0; i < s.length; i++) {
-		const c = s[i];
-		if (q) {
-			if (c === q) {
-				q = null;
-				out += c;
-			} else if (c === "\\" && q === '"' && i + 1 < s.length) {
-				out += "xx";
-				i++;
-			} else out += "x";
-			continue;
-		}
-		if (c === "'" || c === '"') q = c;
-		else if (c === "\\" && i + 1 < s.length) {
-			out += "xx";
-			i++;
-			continue;
-		}
-		out += c;
-	}
-	return out;
-}
-
-// 공백 위치는 마스킹본 기준으로 찾아서 따옴표 안의 공백으로는 나누지 않는다
-const words = (masked: string, src: string) =>
-	[...masked.matchAll(/\S+/g)].map((w) => src.slice(w.index, w.index! + w[0].length).replace(/["']/g, ""));
+// 조회 형태일 때만 허용하는 git 서브커맨드
+const isList = (a: string[]) => a.includes("-l") || a.includes("--list");
+const flagsOrListed = (re: RegExp) => (a: string[]) => a.every((x) => re.test(x) || (!x.startsWith("-") && isList(a)));
+const GIT_RULES: Record<string, (a: string[]) => boolean> = {
+	branch: flagsOrListed(/^(-[arv]+|-l|--(list|all|remotes|verbose|show-current))$/),
+	tag: flagsOrListed(/^(-l|--list|-n\d*)$/),
+	remote: (a) => /^(|-v|--verbose|show|get-url)$/.test(a[0] ?? ""),
+	stash: (a) => /^(list|show)$/.test(a[0] ?? ""),
+	config: (a) =>
+		/^(get|list)$/.test(a[0] ?? "") ||
+		(a.some((x) => /^(--get(-all|-regexp)?|--list|-l)$/.test(x)) && !a.some((x) => /^(--(add|unset|replace|rename|remove|edit)|-e$)/.test(x))),
+	worktree: (a) => a[0] === "list",
+	submodule: (a) => a[0] === "status",
+	reflog: (a) => !a[0] || a[0] === "show" || a[0].startsWith("-"),
+};
 
 function checkGit(args: string[]): string | null {
 	let i = 0;
-	while (i < args.length && args[i].startsWith("-")) {
+	while (args[i]?.startsWith("-")) {
 		if (args[i] === "-C") i += 2;
 		else if (args[i] === "--no-pager") i++;
 		else return `git global option ${args[i]} is not allowed`;
 	}
-	const sub = args[i];
-	const rest = args.slice(i + 1);
-	if (!sub) return null;
-	const bad = rest.find((a) => a.startsWith("--output") || a === "--ext-diff");
-	if (bad) return `git ${bad} is not allowed`;
-	if (GIT_READ.has(sub)) return null;
-
-	const first = rest[0];
-	const onlyFlags = (re: RegExp) => {
-		const listing = rest.some((a) => a === "-l" || a === "--list");
-		return rest.every((a) => re.test(a) || (listing && !a.startsWith("-")));
-	};
-	let ok = false;
-	switch (sub) {
-		case "branch":
-			ok = onlyFlags(/^(-a|-r|-v|-vv|-l|--list|--show-current|--all|--remotes|--verbose)$/);
-			break;
-		case "tag":
-			ok = onlyFlags(/^(-l|--list|-n\d*)$/);
-			break;
-		case "remote":
-			ok = !first || first === "-v" || first === "--verbose" || first === "show" || first === "get-url";
-			break;
-		case "stash":
-			ok = first === "list" || first === "show";
-			break;
-		case "config":
-			ok =
-				first === "get" ||
-				first === "list" ||
-				(rest.some((a) => /^(--get|--get-all|--get-regexp|--list|-l)$/.test(a)) &&
-					!rest.some((a) => /^(--add|--unset|--unset-all|--replace-all|--rename-section|--remove-section|-e|--edit)$/.test(a)));
-			break;
-		case "worktree":
-			ok = first === "list";
-			break;
-		case "submodule":
-			ok = first === "status";
-			break;
-		case "reflog":
-			ok = !first || first === "show" || first.startsWith("-");
-			break;
-	}
-	return ok ? null : `git ${[sub, ...rest].join(" ")} is not read-only`;
+	const [sub, ...rest] = args.slice(i);
+	if (!sub || GIT_READ.has(sub) || GIT_RULES[sub]?.(rest)) return null;
+	return `git ${args.slice(i).join(" ")} is not read-only`;
 }
 
+// masked 기준으로 단어 위치를 찾고, 내용은 원본에서 따옴표만 벗겨 가져온다
 function checkSegment(masked: string, src: string): string | null {
-	const [raw, ...args] = words(masked, src);
+	const [raw, ...args] = [...masked.matchAll(/\S+/g)].map((w) => src.slice(w.index, w.index + w[0].length).replace(/["']/g, ""));
 	if (!raw) return null;
 	const cmd = raw.replace(/^.*[\\/]/, "").replace(/\.exe$/i, "").toLowerCase();
 	if (!ALLOWED.has(cmd)) return `"${raw}" is not in the read-only allowlist`;
-	switch (cmd) {
-		case "git":
-			return checkGit(args);
-		case "find": {
-			const bad = args.find((a) => /^-(exec|execdir|ok|okdir|delete|fprint\w*|fls)$/.test(a));
-			return bad ? `find ${bad} is not allowed` : null;
-		}
-		case "sort": {
-			const bad = args.find((a) => a.startsWith("--output") || /^-[a-zA-Z]*o/.test(a));
-			return bad ? `sort ${bad} writes a file` : null;
-		}
-		case "tail": {
-			const bad = args.find((a) => a.startsWith("--follow") || /^-[a-zA-Z]*[fF]/.test(a));
-			return bad ? `tail ${bad} never exits` : null;
-		}
-	}
-	return null;
+	const bad = DENY_ARG[cmd] && args.find((a) => DENY_ARG[cmd].test(a));
+	if (bad) return `${cmd} ${bad} is not allowed`;
+	return cmd === "git" ? checkGit(args) : null;
 }
 
 export function checkReadOnlyShell(command: string): string | null {
@@ -128,30 +63,22 @@ export function checkReadOnlyShell(command: string): string | null {
 	if (/[\r\n]/.test(command)) return "multi-line commands are not allowed";
 	if (/`|\$\(/.test(command)) return "command substitution is not allowed";
 
-	// 무해한 리다이렉션(2>&1, >/dev/null)은 두 문자열에서 같은 위치를 공백으로 지운다
-	let src = command;
-	let m = mask(command);
-	for (const hit of [...m.matchAll(/\d?>&\d|\d?>\s*\/dev\/null/g)]) {
-		const blank = " ".repeat(hit[0].length);
-		const at = hit.index!;
-		src = src.slice(0, at) + blank + src.slice(at + blank.length);
-		m = m.slice(0, at) + blank + m.slice(at + blank.length);
-	}
-	if (/[<>]/.test(m)) return "redirection is not allowed";
+	// 따옴표 안·이스케이프를 같은 길이로 가리고(구분자 오인 방지), 무해한 리다이렉션(2>&1, >/dev/null)은 지운다
+	const blank = (s: string) => " ".repeat(s.length);
+	const masked = command
+		.replace(/'[^']*'|"(?:\\.|[^"\\])*"|\\./g, (s) => "x".repeat(s.length))
+		.replace(/\d?>&\d|\d?>\s*\/dev\/null/g, blank);
+	if (/[<>]/.test(masked)) return "redirection is not allowed";
 
-	// ;, &&, ||, | 로 나눠 모든 세그먼트를 검사
-	const sep = /&&|\|\||[;|]/g;
+	// ;, &&, ||, | 로 나눈 모든 세그먼트를 검사
 	let start = 0;
-	const segs: [string, string][] = [];
-	for (const hit of m.matchAll(sep)) {
-		segs.push([m.slice(start, hit.index), src.slice(start, hit.index)]);
-		start = hit.index! + hit[0].length;
-	}
-	segs.push([m.slice(start), src.slice(start)]);
-	for (const [ms, ss] of segs) {
-		if (ms.includes("&")) return "background execution (&) is not allowed";
-		const reason = checkSegment(ms, ss);
+	for (const end of [...[...masked.matchAll(/&&|\|\||[;|]/g)], null]) {
+		const stop = end ? end.index : masked.length;
+		const seg = masked.slice(start, stop);
+		if (seg.includes("&")) return "background execution (&) is not allowed";
+		const reason = checkSegment(seg, command.slice(start, stop));
 		if (reason) return reason;
+		if (end) start = end.index + end[0].length;
 	}
 	return null;
 }

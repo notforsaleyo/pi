@@ -28,6 +28,9 @@ const allow = [
 	"sort -n x.txt",
 	"tail -n 50 log.txt",
 	"/usr/bin/git status",
+	"grep 'a;rm x' f.txt",
+	'grep "a \\" > b" f.txt',
+	"git log -- 'a b.ts' | grep -c x",
 ];
 
 const deny = [
@@ -63,6 +66,9 @@ const deny = [
 	"python -c 'print(1)'",
 	"sed -i s/a/b/ f",
 	"ls\nrm x",
+	"git branch -l -D old",
+	"grep x f || rm f",
+	"ls 2>/dev/null > out.txt",
 ];
 
 let fail = 0;
