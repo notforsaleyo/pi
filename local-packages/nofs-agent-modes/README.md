@@ -5,7 +5,7 @@ Shift+Tab 으로 도는 에이전트 모드: PLAN → SPEC → BASH.
 | 모드 | 허용 |
 |---|---|
 | PLAN | read/grep/find/ls, 읽기 전용 bash, codemode |
-| SPEC | PLAN + edit/write (`./openspec/` 하위만) |
+| SPEC | PLAN + edit/write (`./openspec/` 하위만) + `openspec` 명령 (체이닝/리다이렉션 규칙은 읽기 전용과 동일) |
 | BASH | 전부 (powershell, worker 위임 포함) |
 
 - 제한은 `tool_call` 훅에서 건다. codemode 안의 중첩 호출도 같은 훅을 거친다.

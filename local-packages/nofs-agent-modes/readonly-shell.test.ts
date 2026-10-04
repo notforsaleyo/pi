@@ -86,5 +86,15 @@ for (const c of deny) {
 		console.log(`FAIL deny:  ${JSON.stringify(c)}`);
 	} else console.log(`ok deny:   ${JSON.stringify(c)} -> ${r}`);
 }
+const specAllow = ["openspec list --json", "openspec context --json", "openspec new change a --schema b", "openspec status | grep x", "openspec.cmd status"];
+const specDeny = ["openspec x; rm y", "openspec x > f", "openspec x && curl z", "openspec $(whoami)"];
+for (const c of specAllow) {
+	const r = checkReadOnlyShell(c, ["openspec"]);
+	if (r) { fail++; console.log(`FAIL spec allow: ${JSON.stringify(c)} -> ${r}`); }
+}
+for (const c of specDeny) {
+	if (!checkReadOnlyShell(c, ["openspec"])) { fail++; console.log(`FAIL spec deny: ${JSON.stringify(c)}`); }
+}
+if (!checkReadOnlyShell("openspec list")) { fail++; console.log("FAIL: openspec allowed without extra"); }
 console.log(fail ? `${fail} failed` : `all ${allow.length + deny.length} passed`);
 process.exit(fail ? 1 : 0);

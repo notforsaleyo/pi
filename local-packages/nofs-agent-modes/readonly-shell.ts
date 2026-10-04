@@ -48,17 +48,17 @@ function checkGit(args: string[]): string | null {
 }
 
 // masked 기준으로 단어 위치를 찾고, 내용은 원본에서 따옴표만 벗겨 가져온다
-function checkSegment(masked: string, src: string): string | null {
+function checkSegment(masked: string, src: string, extra: string[]): string | null {
 	const [raw, ...args] = [...masked.matchAll(/\S+/g)].map((w) => src.slice(w.index, w.index + w[0].length).replace(/["']/g, ""));
 	if (!raw) return null;
-	const cmd = raw.replace(/^.*[\\/]/, "").replace(/\.exe$/i, "").toLowerCase();
-	if (!ALLOWED.has(cmd)) return `"${raw}" is not in the read-only allowlist`;
+	const cmd = raw.replace(/^.*[\\/]/, "").replace(/\.(exe|cmd)$/i, "").toLowerCase();
+	if (!ALLOWED.has(cmd) && !extra.includes(cmd)) return `"${raw}" is not in the read-only allowlist`;
 	const bad = DENY_ARG[cmd] && args.find((a) => DENY_ARG[cmd].test(a));
 	if (bad) return `${cmd} ${bad} is not allowed`;
 	return cmd === "git" ? checkGit(args) : null;
 }
 
-export function checkReadOnlyShell(command: string): string | null {
+export function checkReadOnlyShell(command: string, extra: string[] = []): string | null {
 	if (!command.trim()) return "empty command";
 	if (/[\r\n]/.test(command)) return "multi-line commands are not allowed";
 	if (/`|\$\(/.test(command)) return "command substitution is not allowed";
@@ -76,7 +76,7 @@ export function checkReadOnlyShell(command: string): string | null {
 		const stop = end ? end.index : masked.length;
 		const seg = masked.slice(start, stop);
 		if (seg.includes("&")) return "background execution (&) is not allowed";
-		const reason = checkSegment(seg, command.slice(start, stop));
+		const reason = checkSegment(seg, command.slice(start, stop), extra);
 		if (reason) return reason;
 		if (end) start = end.index + end[0].length;
 	}

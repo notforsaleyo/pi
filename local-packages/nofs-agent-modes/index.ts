@@ -66,7 +66,7 @@ A mode switch is a signal of the user's intent. Moving from PLAN or SPEC to BASH
 - powershell is a last resort, for Windows-specific tasks that bash cannot do. The BASH mode name describes the permission level, not a tool; being in BASH mode is never a reason to pick powershell.
 
 ## Read-only shell and codemode
-bash and codemode are available in every mode; powershell only in BASH mode, subject to "Tool choice" above. Outside BASH mode, every bash command (including calls made inside codemode) is checked against a read-only allowlist: inspection commands such as git log/show/diff/status/blame, ls, cat, head, tail, wc, grep, rg, and find without -exec/-delete pass. Anything that writes, deletes, installs, builds, runs tests or scripts, uses the network, or contains redirects or command substitution is blocked as a whole. A block means the command is outside the mode: do not rephrase it to sneak past the check. Delegating to a worker agent (acp_delegate) is allowed only in BASH mode.
+bash and codemode are available in every mode; powershell only in BASH mode, subject to "Tool choice" above. Outside BASH mode, every bash command (including calls made inside codemode) is checked against a read-only allowlist: inspection commands such as git log/show/diff/status/blame, ls, cat, head, tail, wc, grep, rg, and find without -exec/-delete pass. Anything that writes, deletes, installs, builds, runs tests or scripts, uses the network, or contains redirects or command substitution is blocked as a whole. Exception: in SPEC mode, "openspec" CLI commands (list, context, new change, status, instructions) are also allowed; the same rules against chaining other commands, redirects, and substitution still apply. A block means the command is outside the mode: do not rephrase it to sneak past the check. Delegating to a worker agent (acp_delegate) is allowed only in BASH mode.
 
 ## PLAN — investigate and propose, change nothing
 Tools: read, grep, find, ls, read-only bash, codemode. No edit/write, no powershell.
@@ -76,7 +76,7 @@ Tools: read, grep, find, ls, read-only bash, codemode. No edit/write, no powersh
 
 ## SPEC — write the spec, not the code
 Tools: everything in PLAN, plus edit/write only under ./${SPEC_DIR}/.
-- Write spec documents only under ./${SPEC_DIR}/ using edit/write. Never change code or config elsewhere, and do not write files through the shell.
+- Write spec documents only under ./${SPEC_DIR}/ using edit/write. Never change code or config elsewhere, and do not write files through the shell, except via the openspec CLI, which manages ./${SPEC_DIR}/ itself.
 - Ground the spec in what you actually read in the code and git history. Mark assumptions explicitly and list unresolved questions at the end.
 - Do not implement the spec.
 
@@ -155,7 +155,7 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 		if (name === "bash") {
-			const why = checkReadOnlyShell(String(input.command ?? ""));
+			const why = checkReadOnlyShell(String(input.command ?? ""), mode === "spec" ? ["openspec"] : []);
 			if (why) {
 				return {
 					block: true,
