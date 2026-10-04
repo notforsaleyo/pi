@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.0.0",
+  "lastChangelogVersion": "1.0.2",
   "defaultProvider": "anthropic",
   "defaultModel": "claude-sonnet-5-5",
   "deviceId": "65b6fc87-9fa1-45df-b4ca-6cf127c54af9",
@@ -33,7 +33,9 @@
     "npm:billion-context-pi",
     "npm:@pi-unipi/notify",
     "./local-packages/nofs-agent-modes",
-    "./local-packages/nofs-theme"
+    "./local-packages/nofs-theme",
+    "git:github.com/DietrichGebert/ponytail",
+    "git:github.com/earendil-works/pi-review"
   ],
   "autocompleteMaxVisible": 5,
   "defaultTools": [
