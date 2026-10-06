@@ -8,7 +8,8 @@
     "openai-codex/gpt-6-luna",
     "openai-codex/gpt-6.1-sol",
     "anthropic/claude-opus-5-5",
-    "anthropic/claude-sonnet-5-5"
+    "anthropic/claude-sonnet-5-5",
+    "anthropic/claude-haiku-4-5"
   ],
   "fullscreenScrollbar": "always",
   "theme": "system",
@@ -30,7 +31,6 @@
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@gotgenes/pi-anthropic-auth",
     "npm:@sreetej510/pi-usage",
-    "npm:@pi-unipi/notify",
     "./local-packages/nofs-agent-modes",
     "./local-packages/nofs-theme",
     "git:github.com/earendil-works/pi-review",
