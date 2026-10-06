@@ -29,3 +29,6 @@ models-store.json
 .env.*
 *.log
 *.tmp
+
+# Installed and managed by herdr; not everyone uses herdr.
+extensions/herdr-agent-state.ts
