@@ -1,7 +1,7 @@
 {
   "name": "nofs-agent-modes",
   "private": true,
-  "description": "Shift+Tab agent modes (PLAN/SPEC/BASH). PLAN and SPEC allow read-only bash checked by readonly-shell.ts; BASH has full access.",
+  "description": "Shift+Tab agent modes (PLAN/SPEC/BASH) as expressions of user intent. No tool blocking; the agent judges.",
   "pi": {
     "extensions": ["./index.ts"]
   }
