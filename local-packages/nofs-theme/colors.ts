@@ -24,10 +24,10 @@ const RAINBOW: RGB[] = [
 ];
 
 // 무지개색이 시간에 따라 흐르고, 밝은 하이라이트가 지나감. 움직이려면 ANIM_MS 마다 다시 그려야 함
-export const ANIM_MS = 100;
+export const ANIM_MS = 1000;
 export function animatedLabel(text: string): string {
 	const t = Date.now() / ANIM_MS;
-	const shift = Math.floor(t / 2);
+	const shift = Math.floor(t);
 	const shine = (Math.floor(t) % (text.length + 8)) - 2; // 하이라이트 위치 (일부 구간은 쉼)
 	return bold(
 		[...text]
@@ -56,4 +56,41 @@ export function thinkingLabel(level: string): string {
 	const t = THINKING[level];
 	if (!t) return dim(level);
 	return t.style(t.bolts ? `${BOLT.repeat(t.bolts)} ${level}` : level);
+}
+
+// ── 캐시 타이머 ──
+// 남은 비율 1 → 0 : 초록 → 노랑 → 주황 → 빨강 으로 선형 보간
+const TIMER_STOPS: [number, RGB][] = [
+	[0, RED],
+	[0.25, ORANGE],
+	[0.5, YELLOW],
+	[1, GREEN],
+];
+
+export function timerColor(frac: number): RGB {
+	const f = Math.min(1, Math.max(0, frac));
+	for (let i = 1; i < TIMER_STOPS.length; i++) {
+		const [hi, hc] = TIMER_STOPS[i]!;
+		const [lo, lc] = TIMER_STOPS[i - 1]!;
+		if (f <= hi) {
+			const t = (f - lo) / (hi - lo);
+			return lc.map((v, k) => Math.round(v + (hc[k]! - v) * t)) as RGB;
+		}
+	}
+	return GREEN;
+}
+
+// 막대 문자: 1칸 너비 블록 (채움 / 빈칸)
+const FULL = "█"; // █
+const EMPTY = "░"; // ░
+const EMPTY_RGB: RGB = [190, 190, 190];
+
+export function timerBar(frac: number, cells: number): string {
+	const filled = frac <= 0 ? 0 : Math.ceil(Math.min(1, frac) * cells);
+	return fg(timerColor(frac), FULL.repeat(filled)) + fg(EMPTY_RGB, EMPTY.repeat(cells - filled));
+}
+
+export function formatRemaining(ms: number): string {
+	const s = Math.max(0, Math.ceil(ms / 1000));
+	return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }

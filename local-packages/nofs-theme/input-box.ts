@@ -5,8 +5,22 @@ import {
 	type KeybindingsManager,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
+import { readFileSync } from "node:fs";
 import { type EditorTheme, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { ANIM_MS, animatedLabel, bold, dim, fg, ORANGE, type RGB, RED, thinkingLabel } from "./colors.ts";
+import {
+	ANIM_MS,
+	animatedLabel,
+	bold,
+	dim,
+	fg,
+	formatRemaining,
+	ORANGE,
+	type RGB,
+	RED,
+	thinkingLabel,
+	timerBar,
+	timerColor,
+} from "./colors.ts";
 
 // 입력창 + 채팅 내 메시지 박스 (위아래 가로선만, 좌우 세로선 없음 → 복사할 때 안 끼게)
 //   ━━  PLAN  ━━ ctx 11% ━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -29,6 +43,22 @@ const CTX_LEVELS: [number, RGB][] = [
 	[15, ORANGE],
 	[8, [190, 150, 0]],
 ];
+
+// 캐시 타이머 설정 (config.json). 없거나 깨지면 기본값
+function loadTimerConfig(): { seconds: number; width: number } {
+	const def = { seconds: 300, width: 20 };
+	try {
+		const c = JSON.parse(readFileSync(new URL("./config.json", import.meta.url), "utf8"));
+		const seconds = Number(c.cacheTimerSeconds);
+		const width = Number(c.cacheTimerWidth);
+		return {
+			seconds: seconds > 0 ? seconds : def.seconds,
+			width: width >= 2 ? Math.floor(width) : def.width,
+		};
+	} catch {
+		return def;
+	}
+}
 
 const inputBorder = (rgb?: RGB) => (s: string) => (rgb ? fg(rgb, s) : `\x1b[37m${s}\x1b[39m`);
 const MSG_BORDER = (s: string) => `\x1b[30m${s}\x1b[39m`; // 터미널 테마 black
@@ -86,6 +116,10 @@ export default function (pi: ExtensionAPI) {
 	const g = globalThis as any;
 	installUserMessageBox();
 
+	pi.on("message_end", (event) => {
+		if ((event.message as any)?.role === "assistant") g.__piCacheTimerAt = Date.now();
+	});
+
 	pi.on("session_shutdown", () => {
 		g.__piInputBox = undefined;
 		if (g.__piUserLabelTimer) clearInterval(g.__piUserLabelTimer);
@@ -95,6 +129,8 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
 		const shared = { active: true, requestRender: undefined as undefined | (() => void) };
+		const timerCfg = loadTimerConfig();
+		g.__piCacheTimerAt = undefined;
 		g.__piInputBox = shared;
 		// 채팅의 사용자 이름(과 추론 강도 max 라벨) 애니메이션용. footer 도 같이 다시 그려지므로 footer 는 계산을 캐시함
 		if (g.__piUserLabelTimer) clearInterval(g.__piUserLabelTimer);
@@ -116,6 +152,16 @@ export default function (pi: ExtensionAPI) {
 				return bold(color ? fg(color, text) : text);
 			}
 
+			private cacheTimer(border: (s: string) => string): string {
+				const lastAssistantAt: number | undefined = g.__piCacheTimerAt; // 마지막 어시스턴트 응답 시각 = 프롬프트 캐시 갱신 시점
+				if (lastAssistantAt === undefined) return "";
+				const ttl = timerCfg.seconds * 1000;
+				const left = Math.max(0, ttl - (Date.now() - lastAssistantAt));
+				const frac = left / ttl;
+				const label = bold(fg(timerColor(frac), formatRemaining(left)));
+				return `${label}${border(` ${LINE}${LINE} `)}${timerBar(frac, timerCfg.width)}`;
+			}
+
 			render(width: number): string[] {
 				if (width < 12) return super.render(width);
 				const inner = width - 1; // 내용 + 오른쪽 공백 1칸
@@ -134,7 +180,11 @@ export default function (pi: ExtensionAPI) {
 				// 위 테두리: ━━ [MODE] ━━ ctx N% ━━━━━━━━
 				const modeLabel = mode ? mode.style(` ${mode.icon} ${mode.label} `) : "";
 				const left = `${border(`${LINE}${LINE} `)}${modeLabel}${border(` ${LINE}${LINE} `)}${this.contextLabel()}${border(" ")}`;
-				const top = `${left}${border(LINE.repeat(Math.max(1, width - visibleWidth(left))))}`;
+				// 캐시 타이머는 공간이 충분할 때만: ━━ PLAN ━━ ctx 11% ━━ 4:32 ▰▰▰▱▱ ━━━━
+				const timer = this.cacheTimer(border);
+				const timerPart = timer ? `${border(`${LINE}${LINE} `)}${timer}${border(" ")}` : "";
+				const head = timerPart && width - visibleWidth(left) - visibleWidth(timerPart) >= 2 ? left + timerPart : left;
+				const top = `${head}${border(LINE.repeat(Math.max(1, width - visibleWidth(head))))}`;
 				const bottom = border(LINE.repeat(width));
 
 				const model = ctx.model;
