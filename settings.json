@@ -30,12 +30,13 @@
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@gotgenes/pi-anthropic-auth",
     "npm:@sreetej510/pi-usage",
-    "npm:billion-context-pi",
     "npm:@pi-unipi/notify",
     "./local-packages/nofs-agent-modes",
     "./local-packages/nofs-theme",
-    "git:github.com/DietrichGebert/ponytail",
-    "git:github.com/earendil-works/pi-review"
+    "git:github.com/earendil-works/pi-review",
+    "npm:@yusukeshib/pi-stash",
+    "npm:pi-context-view",
+    "npm:pi-rtk-optimizer"
   ],
   "autocompleteMaxVisible": 5,
   "defaultTools": [

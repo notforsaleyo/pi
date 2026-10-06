@@ -25,7 +25,6 @@ bin/
 backups/
 usage-cache.json
 models-store.json
-.billion-context-*
 .env
 .env.*
 *.log
