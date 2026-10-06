@@ -15,5 +15,6 @@
   "app.clear": [],
   "app.exit": [],
   "tui.input.copy": [],
-  "tui.select.cancel": "escape"
+  "tui.select.cancel": "escape",
+  "app.message.copy": "ctrl+c"
 }

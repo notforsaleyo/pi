@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.0.2",
+  "lastChangelogVersion": "1.0.4",
   "defaultProvider": "anthropic",
   "defaultModel": "claude-sonnet-5-5",
   "deviceId": "65b6fc87-9fa1-45df-b4ca-6cf127c54af9",
@@ -23,7 +23,7 @@
     "showTerminalProgress": true,
     "clearOnShrink": false
   },
-  "showHardwareCursor": false,
+  "showHardwareCursor": true,
   "enableSkillCommands": true,
   "packages": [
     "npm:pi-web-search",
@@ -50,5 +50,10 @@
   "doubleEscapeAction": "none",
   "fullscreenExitOutput": "transcript",
   "editorPaddingX": 0,
-  "outputPad": 0
+  "outputPad": 0,
+  "treeFilterMode": "default",
+  "fullscreenCopyOnSelect": false,
+  "compaction": {
+    "enabled": true
+  }
 }
