@@ -35,12 +35,16 @@
     "./local-packages/nofs-theme",
     "git:github.com/earendil-works/pi-review",
     "npm:@yusukeshib/pi-stash",
-    "npm:pi-context-view",
-    "npm:pi-rtk-optimizer"
+    "npm:pi-context-view"
   ],
   "autocompleteMaxVisible": 5,
   "defaultTools": [
-    "+codemode"
+    "+codemode",
+    "+grep",
+    "+find",
+    "+ls",
+    "-bash",
+    "+powershell"
   ],
   "warnings": {
     "anthropicExtraUsage": false
