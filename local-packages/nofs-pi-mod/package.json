@@ -1,0 +1,8 @@
+{
+  "name": "nofs-pi-mod",
+  "private": true,
+  "description": "Small personal tweaks: keybindings, command aliases.",
+  "pi": {
+    "extensions": ["./thinking-cycle-backward.ts", "./clear-input.ts", "./exit-alias.ts"]
+  }
+}

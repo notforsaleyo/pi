@@ -33,6 +33,7 @@
     "npm:@sreetej510/pi-usage",
     "./local-packages/nofs-agent-modes",
     "./local-packages/nofs-theme",
+    "./local-packages/nofs-pi-mod",
     "git:github.com/earendil-works/pi-review",
     "npm:@yusukeshib/pi-stash",
     "npm:pi-context-view"
