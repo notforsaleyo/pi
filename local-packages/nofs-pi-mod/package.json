@@ -1,8 +1,8 @@
 {
   "name": "nofs-pi-mod",
   "private": true,
-  "description": "Small personal tweaks: keybindings, command aliases.",
+  "description": "Small personal tweaks: keybindings, command aliases, /warm cache warming.",
   "pi": {
-    "extensions": ["./thinking-cycle-backward.ts", "./clear-input.ts", "./exit-alias.ts"]
+    "extensions": ["./thinking-cycle-backward.ts", "./clear-input.ts", "./exit-alias.ts", "./cache-warmer.ts"]
   }
 }
