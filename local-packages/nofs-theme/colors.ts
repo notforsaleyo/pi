@@ -24,7 +24,7 @@ const RAINBOW: RGB[] = [
 ];
 
 // 무지개색이 시간에 따라 흐르고, 밝은 하이라이트가 지나감. 움직이려면 ANIM_MS 마다 다시 그려야 함
-export const ANIM_MS = 1000;
+export const ANIM_MS = 100;
 export function animatedLabel(text: string): string {
 	const t = Date.now() / ANIM_MS;
 	const shift = Math.floor(t);
