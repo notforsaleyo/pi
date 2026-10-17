@@ -39,7 +39,7 @@ export default function (pi: ExtensionAPI) {
 	// Loaded as a local package listed after npm:@sreetej510/pi-usage in settings.json "packages",
 	// so this session_start handler runs after pi-usage's and its setFooter call wins.
 	pi.on("session_start", (_e, ctx) => {
-		// input-box.ts redraws every 100ms for its animation, so only re-sum usage when the leaf changes.
+		// Cache countdown redraws also refresh the footer; only re-sum usage when the leaf changes.
 		let cachedLeaf: string | null | undefined;
 		let cached: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, recentRead: 0, recentTotal: 0 };
 		const usage = (sm: ExtensionContext["sessionManager"]): Usage => {

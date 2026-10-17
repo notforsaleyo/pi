@@ -8,8 +8,7 @@ import {
 import { readFileSync } from "node:fs";
 import { type EditorTheme, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
-	ANIM_MS,
-	animatedLabel,
+	rainbowLabel,
 	bold,
 	dim,
 	fg,
@@ -90,7 +89,7 @@ function renderUserMessage(inst: any, width: number): string[] {
 	const row = (l: string) => boxRow(l, inner, MSG_BG);
 	return [
 		// ━━ name ━━━━━ : 이름이 위 테두리 안에 들어감
-		`${MSG_BORDER(`${LINE}${LINE} `)}${animatedLabel(USER_NAME)}${MSG_BORDER(` ${LINE.repeat(Math.max(0, width - USER_NAME.length - 5))}`)}`,
+		`${MSG_BORDER(`${LINE}${LINE} `)}${rainbowLabel(USER_NAME)}${MSG_BORDER(` ${LINE.repeat(Math.max(0, width - USER_NAME.length - 5))}`)}`,
 		row(""),
 		...(lines.length ? lines : [""]).map(row),
 		row(""),
@@ -122,8 +121,8 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", () => {
 		g.__piInputBox = undefined;
-		if (g.__piUserLabelTimer) clearInterval(g.__piUserLabelTimer);
-		g.__piUserLabelTimer = undefined;
+		if (g.__piCacheDisplayTimer) clearInterval(g.__piCacheDisplayTimer);
+		g.__piCacheDisplayTimer = undefined;
 	});
 
 	pi.on("session_start", (_event, ctx: ExtensionContext) => {
@@ -132,9 +131,14 @@ export default function (pi: ExtensionAPI) {
 		const timerCfg = loadTimerConfig();
 		g.__piCacheTimerAt = undefined;
 		g.__piInputBox = shared;
-		// 채팅의 사용자 이름(과 추론 강도 max 라벨) 애니메이션용. footer 도 같이 다시 그려지므로 footer 는 계산을 캐시함
-		if (g.__piUserLabelTimer) clearInterval(g.__piUserLabelTimer);
-		g.__piUserLabelTimer = setInterval(() => shared.requestRender?.(), ANIM_MS);
+		// 캐시 카운트다운만 1초 간격으로 갱신한다. 이름과 추론 강도 색상은 고정이다.
+		if (g.__piCacheDisplayTimer) clearInterval(g.__piCacheDisplayTimer);
+		g.__piCacheDisplayTimer = setInterval(() => {
+			const lastAssistantAt: number | undefined = g.__piCacheTimerAt;
+			if (lastAssistantAt !== undefined && Date.now() - lastAssistantAt <= timerCfg.seconds * 1000 + 1000) {
+				shared.requestRender?.();
+			}
+		}, 1000);
 		ctx.ui.setWidget("agent-mode", undefined); // 모드 라벨은 테두리에 표시
 
 		class InputBox extends CustomEditor {

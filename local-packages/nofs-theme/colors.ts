@@ -23,22 +23,9 @@ const RAINBOW: RGB[] = [
 	[176, 70, 200],
 ];
 
-// 무지개색이 시간에 따라 흐르고, 밝은 하이라이트가 지나감. 움직이려면 ANIM_MS 마다 다시 그려야 함
-export const ANIM_MS = 100;
-export function animatedLabel(text: string): string {
-	const t = Date.now() / ANIM_MS;
-	const shift = Math.floor(t);
-	const shine = (Math.floor(t) % (text.length + 8)) - 2; // 하이라이트 위치 (일부 구간은 쉼)
-	return bold(
-		[...text]
-			.map((c, i) => {
-				const base = RAINBOW[(i + shift) % RAINBOW.length]!;
-				const d = Math.abs(i - shine);
-				const f = d === 0 ? 0.6 : d === 1 ? 0.3 : 0;
-				return fg(base.map((v) => Math.round(v + (255 - v) * f)) as RGB, c);
-			})
-			.join(""),
-	);
+// 글자별 무지개색은 고정한다. 시간에 따른 색상 이동이나 하이라이트는 없다.
+export function rainbowLabel(text: string): string {
+	return bold([...text].map((c, i) => fg(RAINBOW[i % RAINBOW.length]!, c)).join(""));
 }
 
 // 추론 강도: low 초록 / medium 청록 / high 굵은 노랑 / xhigh 굵은 빨강 / max 무지개
@@ -49,7 +36,7 @@ const THINKING: Record<string, { bolts: number; style: (s: string) => string }> 
 	medium: { bolts: 1, style: (s) => fg(TEAL, s) },
 	high: { bolts: 2, style: (s) => bold(fg(YELLOW, s)) },
 	xhigh: { bolts: 3, style: (s) => bold(fg(RED, s)) },
-	max: { bolts: 4, style: animatedLabel },
+	max: { bolts: 4, style: rainbowLabel },
 };
 
 export function thinkingLabel(level: string): string {
