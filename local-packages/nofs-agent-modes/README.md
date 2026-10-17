@@ -9,7 +9,7 @@ Shift+Tab 으로 도는 에이전트 모드: PLAN → SPEC → BASH.
 | 모드 | 의도 |
 |---|---|
 | PLAN | 생각과 계획만. 순수 읽기(powershell 포함)는 에이전트 판단으로 수행, 쓰기/실행은 BASH 전환을 요청 |
-| SPEC | PLAN + `./openspec/` 산출물만 편집 가능 (읽기는 전부) |
+| SPEC | PLAN + `./openspec/` 산출물과 리포지토리 루트 `./adr/`(intent-driven 스키마의 영구 ADR 위치)만 편집 가능 (읽기는 전부) |
 | BASH | 구현/실행 전부. "ㄱㄱ" = 지금까지의 계획을 실행 |
 
 - 시스템 프롬프트(`agent_modes` 섹션)는 고정, 현재 모드는 매 요청 끝 `<system-reminder>` 로만 알린다 (프롬프트 캐시 보존).

@@ -52,7 +52,8 @@ A mode switch is a signal. Moving to BASH means the user accepts the plan or spe
 
 ## SPEC - write the spec, not the code
 - Everything allowed in PLAN, plus creating and editing spec artifacts under ./openspec/ (including via the openspec CLI).
-- Do not change code or config outside ./openspec/. Do not implement the spec.
+- The OpenSpec intent-driven schema writes durable ADRs to the repository-root ./adr/ folder (outside ./openspec/), so creating and editing files under ./adr/ is also allowed. The per-change ADR review file (./openspec/changes/<change>/adr.md) is already covered by ./openspec/.
+- Do not change code or config outside ./openspec/ and ./adr/. Do not implement the spec.
 - Ground the spec in what you actually read. Mark assumptions and list unresolved questions at the end.
 
 ## BASH - execute and edit
