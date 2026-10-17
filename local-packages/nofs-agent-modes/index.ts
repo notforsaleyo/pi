@@ -99,13 +99,40 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", (event) => {
 		event.systemPromptOptions.sections.agent_modes = MODES_PROMPT;
+	});
+
+	// reminder 는 세션에 저장하지 않고 요청 직전에만 각 user 메시지 끝에 붙인다.
+	// custom_message 로 저장하면 투영(projection)이 만들어질 때마다 새 객체가 되어
+	// pi 의 캐시 워머가 "conversation context changed" 로 멈춘다.
+	// 과거 user 메시지에는 그 시점의 모드를 붙여서(모드 변경 entry 의 timestamp 로 복원) 접두가 매번 같게 유지한다.
+	pi.on("context", (event, ctx) => {
+		const changes: { at: number; mode: ModeId }[] = [];
+		for (const e of ctx.sessionManager.getEntries() as any[]) {
+			if (e.type === "custom" && e.customType === ENTRY && e.data?.mode in MODES) {
+				changes.push({ at: Date.parse(e.timestamp), mode: e.data.mode });
+			}
+		}
+		const modeAt = (t: number): ModeId => {
+			let found: ModeId = DEFAULT;
+			for (const c of changes) if (c.at <= t) found = c.mode;
+			return found;
+		};
+
+		// 예전 버전이 저장해 둔 reminder 는 중복되므로 요청에서만 뺀다.
+		const messages = event.messages.filter((m: any) => !(m.role === "custom" && m.customType === REMINDER));
+		let lastUser = -1;
+		messages.forEach((m: any, i: number) => {
+			if (m.role === "user") lastUser = i;
+		});
+
 		return {
-			message: {
-				customType: REMINDER,
-				content: `<system-reminder>Current mode: ${MODES[mode].label}</system-reminder>`,
-				display: false,
-				details: { mode },
-			},
+			messages: messages.map((m: any, i: number) => {
+				if (m.role !== "user") return m;
+				const id = i === lastUser ? mode : modeAt(m.timestamp);
+				const block = { type: "text" as const, text: `<system-reminder>Current mode: ${MODES[id].label}</system-reminder>` };
+				const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
+				return { ...m, content: [...content, block] };
+			}),
 		};
 	});
 }
