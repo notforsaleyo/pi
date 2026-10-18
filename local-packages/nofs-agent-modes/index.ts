@@ -33,7 +33,7 @@ const MODES = {
 type ModeId = keyof typeof MODES;
 
 const IDS = Object.keys(MODES) as ModeId[]; // 선언 순서 = 순환 순서 (자유도 오름차순)
-const DEFAULT: ModeId = "bash";
+const DEFAULT: ModeId = "plan";
 const ENTRY = "agent-mode";
 const REMINDER = "agent-mode-reminder";
 
