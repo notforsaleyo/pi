@@ -1,7 +1,7 @@
 {
   "name": "nofs-pi-mod",
   "private": true,
-  "description": "Small personal tweaks: keybindings, command aliases, /warm cache warming, /fresh named sessions, /handoff session handoff.",
+  "description": "Small personal tweaks: keybindings, command aliases, /warm cache warming, /fresh named sessions, /handoff + /handover session handoff.",
   "pi": {
     "extensions": ["./thinking-cycle-backward.ts", "./clear-input.ts", "./exit-alias.ts", "./cache-warmer.ts", "./new-session.ts", "./handoff.ts"]
   }

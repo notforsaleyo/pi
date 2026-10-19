@@ -1,14 +1,21 @@
-import { unlink } from "node:fs/promises";
-import { sep } from "node:path";
+import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { dirname, join, sep } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
-// /handoff [--purge] [작업]: 현재 세션(따뜻한 캐시)에 핸드오프 노트를 쓰게 하고, 그 노트로 새 세션을 시작한다.
-// --purge 가 있으면 새 세션에 노트 전송이 시작된 뒤에만 현재 세션 파일을 바로 삭제한다 (확인 없음, 휴지통 없음).
+// /handoff [--purge] [--force] [작업]: 현재 세션(따뜻한 캐시)에 핸드오프 노트를 쓰게 하고, <cwd>/.pi/handoff.md 에 저장한 뒤
+//   새 세션을 시작한다. 새 세션의 입력창에는 /handover 가 채워져 있다.
+//   handoff.md 가 이미 있으면 경고만 하고 중단한다. --force 가 있으면 확인 없이 덮어쓴다.
+//   --purge 가 있으면 새 세션이 만들어진 뒤 현재 세션 파일을 바로 삭제한다 (확인 없음, 휴지통 없음).
+// /handover: handoff.md 를 읽어 메시지로 전송하고 파일을 삭제한다.
+//   삭제는 전송이 시작된 뒤에만 한다.
 // 프롬프트 지시문과 전체 흐름은 default-anton/pi-handoff (Apache-2.0) 를 참고했다.
 
 const TIMEOUT_MS = 5 * 60 * 1000;
 const POLL_MS = 100;
 const SEND_GRACE_MS = 1500;
+
+const handoffPath = (cwd: string) => join(cwd, ".pi", "handoff.md");
+const exists = (p: string) => access(p).then(() => true, () => false);
 
 const INSTRUCTIONS = `You are writing a handoff note for another AI agent with NO access to this chat.
 
@@ -80,14 +87,27 @@ async function waitForNote(ctx: ExtensionCommandContext, from: number, request: 
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("handoff", {
-		description: "Move context to a new session via a handoff note (usage: /handoff [--purge] [task])",
+		description: "Save a handoff note to .pi/handoff.md and move to a new session (usage: /handoff [--purge] [--force] [task])",
 		handler: async (args, ctx) => {
 			const notify = (message: string, level: "info" | "warning" | "error") => ctx.ui.notify(message, level);
 
 			let rest = args.trim();
-			const purge = /^--purge(\s|$)/.test(rest);
-			if (purge) rest = rest.slice("--purge".length).trim();
-			const task = rest;
+			let purge = false;
+			let force = false;
+			for (;;) {
+				const m = /^(--purge|--force)(\s+|$)/.exec(rest);
+				if (!m) break;
+				if (m[1] === "--purge") purge = true;
+				else force = true;
+				rest = rest.slice(m[0].length);
+			}
+			const task = rest.trim();
+
+			const file = handoffPath(ctx.cwd);
+			if (!force && (await exists(file))) {
+				notify(`${file} 이(가) 이미 있습니다. 아직 /handover 로 소비되지 않은 핸드오프일 수 있어 중단합니다. 덮어쓰려면 /handoff --force 를 사용하십시오.`, "warning");
+				return;
+			}
 
 			if (!ctx.model) {
 				notify("모델이 선택되어 있지 않습니다.", "error");
@@ -113,13 +133,19 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const prompt = task ? `${note}\n\n---\n\n## Task\n${task}` : note;
+			const content = task ? `${note}\n\n---\n\n## Task\n${task}` : note;
+
+			try {
+				await mkdir(dirname(file), { recursive: true });
+				await writeFile(file, content, "utf8");
+			} catch (error) {
+				notify(`handoff.md 저장에 실패했습니다: ${(error as Error).message}. 현재 세션은 그대로 둡니다.`, "error");
+				return;
+			}
 
 			const result = await ctx.newSession({
 				withSession: async (newCtx) => {
-					const sent = newCtx.sendUserMessage(prompt, newCtx.isIdle() ? undefined : { deliverAs: "followUp" });
-					// 전송이 오류 없이 시작됐다고 볼 수 있을 때까지(이미 실패하지 않았을 때) 기다린 뒤 삭제한다.
-					await Promise.race([sent, sleep(SEND_GRACE_MS)]);
+					newCtx.ui.setEditorText("/handover");
 					if (purge && oldFile) {
 						try {
 							await unlink(oldFile);
@@ -127,14 +153,41 @@ export default function (pi: ExtensionAPI) {
 							newCtx.ui.notify(`이전 세션 삭제에 실패했습니다: ${(error as Error).message}`, "warning");
 						}
 					}
-					await sent;
+					newCtx.ui.notify(`핸드오프를 ${file} 에 저장했습니다. Enter 로 /handover 를 실행하십시오.`, "info");
 				},
 			});
 
 			if (result.cancelled) {
-				notify("새 세션 생성이 취소되어 현재 세션을 그대로 둡니다.", "info");
+				notify(`새 세션 생성이 취소되어 현재 세션을 그대로 둡니다. 노트는 ${file} 에 남아 있습니다.`, "info");
 				return;
 			}
+		},
+	});
+
+	pi.registerCommand("handover", {
+		description: "Load .pi/handoff.md as a message, then delete the file",
+		handler: async (_args, ctx) => {
+			const file = handoffPath(ctx.cwd);
+			let text: string;
+			try {
+				text = (await readFile(file, "utf8")).trim();
+			} catch {
+				ctx.ui.notify(`${file} 이(가) 없습니다.`, "warning");
+				return;
+			}
+			if (!text) {
+				ctx.ui.notify(`${file} 이(가) 비어 있습니다.`, "warning");
+				return;
+			}
+			const sent = pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
+			// 전송이 오류 없이 시작됐다고 볼 수 있을 때까지 기다린 뒤 삭제한다.
+			await Promise.race([sent, sleep(SEND_GRACE_MS)]);
+			try {
+				await unlink(file);
+			} catch (error) {
+				ctx.ui.notify(`handoff.md 삭제에 실패했습니다: ${(error as Error).message}`, "warning");
+			}
+			await sent;
 		},
 	});
 }
