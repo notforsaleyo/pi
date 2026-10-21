@@ -8,6 +8,8 @@ import {
 import { readFileSync } from "node:fs";
 import { type EditorTheme, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
+	ANIM_MS,
+	setAnimationEnabled,
 	rainbowLabel,
 	bold,
 	dim,
@@ -114,12 +116,40 @@ function installUserMessageBox(): void {
 export default function (pi: ExtensionAPI) {
 	const g = globalThis as any;
 	installUserMessageBox();
+	let animation = true;
+	let showCacheTimer = true;
+	let restartDisplayTimer: (() => void) | undefined;
+	setAnimationEnabled(animation);
+
+	pi.registerCommand("animation", {
+		description: "Toggle name/max effort animation: /animation [on|off] (session only)",
+		handler: async (args, ctx) => {
+			const value = args.trim().toLowerCase();
+			if (value && value !== "on" && value !== "off") {
+				ctx.ui.notify("사용법: /animation [on|off]", "warning");
+				return;
+			}
+			animation = value ? value === "on" : !animation;
+			setAnimationEnabled(animation);
+			restartDisplayTimer?.();
+			g.__piInputBox?.requestRender?.();
+			ctx.ui.notify(`무지개 애니메이션 ${animation ? "켜짐" : "꺼짐"} (현재 세션)`, "info");
+		},
+	});
+
+	const supportsCacheTimer = (provider?: string) =>
+		!!provider && provider !== "openai" && !provider.startsWith("openai-");
+	pi.on("model_select", (event) => {
+		showCacheTimer = supportsCacheTimer(event.model.provider);
+		g.__piInputBox?.requestRender?.();
+	});
 
 	pi.on("message_end", (event) => {
 		if ((event.message as any)?.role === "assistant") g.__piCacheTimerAt = Date.now();
 	});
 
 	pi.on("session_shutdown", () => {
+		restartDisplayTimer = undefined;
 		g.__piInputBox = undefined;
 		if (g.__piCacheDisplayTimer) clearInterval(g.__piCacheDisplayTimer);
 		g.__piCacheDisplayTimer = undefined;
@@ -131,14 +161,19 @@ export default function (pi: ExtensionAPI) {
 		const timerCfg = loadTimerConfig();
 		g.__piCacheTimerAt = undefined;
 		g.__piInputBox = shared;
-		// 캐시 카운트다운만 1초 간격으로 갱신한다. 이름과 추론 강도 색상은 고정이다.
-		if (g.__piCacheDisplayTimer) clearInterval(g.__piCacheDisplayTimer);
-		g.__piCacheDisplayTimer = setInterval(() => {
-			const lastAssistantAt: number | undefined = g.__piCacheTimerAt;
-			if (lastAssistantAt !== undefined && Date.now() - lastAssistantAt <= timerCfg.seconds * 1000 + 1000) {
-				shared.requestRender?.();
-			}
-		}, 1000);
+		showCacheTimer = supportsCacheTimer(ctx.model?.provider);
+		// 애니메이션과 카운트다운이 하나의 갱신 루프를 공유한다.
+		restartDisplayTimer = () => {
+			if (g.__piCacheDisplayTimer) clearInterval(g.__piCacheDisplayTimer);
+			g.__piCacheDisplayTimer = setInterval(() => {
+				const lastAssistantAt: number | undefined = g.__piCacheTimerAt;
+				if (animation || (showCacheTimer && lastAssistantAt !== undefined &&
+					Date.now() - lastAssistantAt <= timerCfg.seconds * 1000 + 1000)) {
+					shared.requestRender?.();
+				}
+			}, animation ? ANIM_MS : 1000);
+		};
+		restartDisplayTimer();
 		ctx.ui.setWidget("agent-mode", undefined); // 모드 라벨은 테두리에 표시
 
 		class InputBox extends CustomEditor {
@@ -156,14 +191,30 @@ export default function (pi: ExtensionAPI) {
 				return bold(color ? fg(color, text) : text);
 			}
 
-			private cacheTimer(border: (s: string) => string): string {
+			// 캐시 워밍 아이콘 (nofs-pi-mod/cache-warmer.ts 가 globalThis.__piWarm 으로 전달). 너드 폰트 아이콘 뒤에는 공백 1칸.
+			// off 󰑗 / once 󰑘 / on 󰑖 : 색은 현재 모드 색 (모양으로만 구분)
+			private warmIcon(border: (s: string) => string): string {
+				const warm = g.__piWarm as { mode: "off" | "once" | "on" } | undefined;
+				if (!warm) return "";
+				const icon = warm.mode === "on" ? "\u{F0456}" : warm.mode === "once" ? "\u{F0458}" : "\u{F0457}";
+				return bold(border(`${icon} `));
+			}
+
+			// 캐시 타이머 구간: 3:56  ████░░░░ 󰑗  (구분 문자 없이 공백만)
+			private cacheTimer(border: (s: string) => string, withWarm = true): string {
+				if (!showCacheTimer) return "";
+				const parts: string[] = [];
 				const lastAssistantAt: number | undefined = g.__piCacheTimerAt; // 마지막 어시스턴트 응답 시각 = 프롬프트 캐시 갱신 시점
-				if (lastAssistantAt === undefined) return "";
-				const ttl = timerCfg.seconds * 1000;
-				const left = Math.max(0, ttl - (Date.now() - lastAssistantAt));
-				const frac = left / ttl;
-				const label = bold(fg(timerColor(frac), formatRemaining(left)));
-				return `${label}${border(` ${LINE}${LINE} `)}${timerBar(frac, timerCfg.width)}`;
+				if (lastAssistantAt !== undefined) {
+					const ttl = timerCfg.seconds * 1000;
+					const left = Math.max(0, ttl - (Date.now() - lastAssistantAt));
+					const frac = left / ttl;
+					parts.push(bold(fg(timerColor(frac), formatRemaining(left))) + " ");
+					parts.push(timerBar(frac, timerCfg.width));
+				}
+				const icon = withWarm ? this.warmIcon(border) : "";
+				if (icon) parts.push(icon);
+				return parts.join(" ");
 			}
 
 			render(width: number): string[] {
@@ -185,9 +236,17 @@ export default function (pi: ExtensionAPI) {
 				const modeLabel = mode ? mode.style(` ${mode.icon} ${mode.label} `) : "";
 				const left = `${border(`${LINE}${LINE} `)}${modeLabel}${border(` ${LINE}${LINE} `)}${this.contextLabel()}${border(" ")}`;
 				// 캐시 타이머는 공간이 충분할 때만: ━━ PLAN ━━ ctx 11% ━━ 4:32 ▰▰▰▱▱ ━━━━
-				const timer = this.cacheTimer(border);
-				const timerPart = timer ? `${border(`${LINE}${LINE} `)}${timer}${border(" ")}` : "";
-				const head = timerPart && width - visibleWidth(left) - visibleWidth(timerPart) >= 2 ? left + timerPart : left;
+				// 공간이 모자라면 워밍 아이콘부터 빼고, 그래도 안 되면 구간 전체를 뺀다.
+				let head = left;
+				for (const withWarm of [true, false]) {
+					const timer = this.cacheTimer(border, withWarm);
+					if (!timer) continue;
+					const timerPart = `${border(`${LINE}${LINE} `)}${timer}${border(" ")}`;
+					if (width - visibleWidth(left) - visibleWidth(timerPart) >= 2) {
+						head = left + timerPart;
+						break;
+					}
+				}
 				const top = `${head}${border(LINE.repeat(Math.max(1, width - visibleWidth(head))))}`;
 				const bottom = border(LINE.repeat(width));
 

@@ -54,6 +54,7 @@
   "quietStartup": true,
   "doubleEscapeAction": "none",
   "fullscreenExitOutput": "transcript",
+  "externalEditor": "edit",
   "editorPaddingX": 0,
   "outputPad": 0,
   "treeFilterMode": "default",

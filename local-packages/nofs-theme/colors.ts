@@ -23,9 +23,22 @@ const RAINBOW: RGB[] = [
 	[176, 70, 200],
 ];
 
-// 글자별 무지개색은 고정한다. 시간에 따른 색상 이동이나 하이라이트는 없다.
+export const ANIM_MS = 100;
+let animationEnabled = true;
+export function setAnimationEnabled(enabled: boolean): void {
+	animationEnabled = enabled;
+}
+
+// 끄면 기존의 고정 무지개색으로 표시한다.
 export function rainbowLabel(text: string): string {
-	return bold([...text].map((c, i) => fg(RAINBOW[i % RAINBOW.length]!, c)).join(""));
+	const shift = animationEnabled ? Math.floor(Date.now() / ANIM_MS) : 0;
+	const shine = (shift % (text.length + 8)) - 2;
+	return bold([...text].map((c, i) => {
+		const base = RAINBOW[(i + shift) % RAINBOW.length]!;
+		const d = Math.abs(i - shine);
+		const f = animationEnabled ? (d === 0 ? 0.6 : d === 1 ? 0.3 : 0) : 0;
+		return fg(base.map((v) => Math.round(v + (255 - v) * f)) as RGB, c);
+	}).join(""));
 }
 
 // 추론 강도: low 초록 / medium 청록 / high 굵은 노랑 / xhigh 굵은 빨강 / max 무지개
