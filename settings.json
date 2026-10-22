@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.3.0",
+  "lastChangelogVersion": "1.4.0",
   "defaultProvider": "anthropic",
   "defaultModel": "claude-sonnet-5-5",
   "deviceId": "65b6fc87-9fa1-45df-b4ca-6cf127c54af9",
@@ -19,7 +19,7 @@
   "markdown": {
     "mermaid": "streaming"
   },
-  "hideThinkingBlock": true,
+  "hideThinkingBlock": false,
   "terminal": {
     "showTerminalProgress": true,
     "clearOnShrink": false
