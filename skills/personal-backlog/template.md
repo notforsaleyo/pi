@@ -1,23 +1,20 @@
 ---
-title: "구체적인 주제 제목"
-status: open
+title: "Specific topic title"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ---
 
-## 대화 배경
-어떤 문제를 이야기하다 나온 내용인지 짧게 요약합니다.
+## Background
+Briefly summarize what problem was being discussed when this came up.
 
-## 기억할 내용
-다음 세션에서도 이해할 수 있게 핵심 내용을 기록합니다.
+## What to remember
+Record the key content so it can be understood in a later session.
 
-## 현재 결론과 미정 사항
-확정한 내용, 제안 또는 후보, 아직 확인할 내용을 구분합니다.
+## Current conclusions and open questions
+Separate what is decided, what is a proposal or candidate, and what still needs checking.
 
-## 다음에 이어갈 지점
-다시 시작할 때 필요한 행동이나 질문을 적습니다. 정해지지 않았다면 그렇게 적습니다.
+## Where to pick up
+Write the action or question needed to resume. If it is not decided, say so.
 
-## 참고
-필요한 외부 자료 링크나 관련 프로젝트 이름을 적습니다. 없으면 이 절을 생략합니다.
-
-## 완료 기록
+## References
+List needed external links or related project names. Omit this section if there are none.
