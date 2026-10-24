@@ -4,6 +4,9 @@ import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earen
 
 // /handoff [--purge] [--force] [작업]: 현재 세션(따뜻한 캐시)에 핸드오프 노트를 쓰게 하고, <cwd>/.pi/handoff.md 에 저장한 뒤
 //   새 세션을 시작한다. 새 세션의 입력창에는 /handover 가 채워져 있다.
+//   UI 가 있으면 노트 작성 전에 요약 중점을 묻는다 (작성 안 함 / 직접 작성). Esc 는 핸드오프 전체를 취소한다.
+//   요약 중점은 노트를 쓰는 현재 세션에만 전달되고 handoff.md 에는 저장하지 않는다.
+//   작업은 노트 작성 요청과 handoff.md 의 ## Task 양쪽에 들어간다.
 //   handoff.md 가 이미 있으면 경고만 하고 중단한다. --force 가 있으면 확인 없이 덮어쓴다.
 //   --purge 가 있으면 새 세션이 만들어진 뒤 현재 세션 파일을 바로 삭제한다 (확인 없음, 휴지통 없음).
 // /handover: handoff.md 를 읽어 메시지로 전송하고 파일을 삭제한다.
@@ -87,7 +90,7 @@ async function waitForNote(ctx: ExtensionCommandContext, from: number, request: 
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("handoff", {
-		description: "Save a handoff note to .pi/handoff.md and move to a new session (usage: /handoff [--purge] [--force] [task])",
+		description: "Save a handoff note to .pi/handoff.md and move to a new session (usage: /handoff [--purge] [--force] [task for next session])",
 		handler: async (args, ctx) => {
 			const notify = (message: string, level: "info" | "warning" | "error") => ctx.ui.notify(message, level);
 
@@ -121,7 +124,29 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const request = task ? `${INSTRUCTIONS}\n\nTask for the next agent:\n${task}` : INSTRUCTIONS;
+			// 요약 중점: 현재 세션의 노트 작성에만 쓰고 다음 세션에는 전달하지 않는다.
+			let focus = "";
+			if (ctx.hasUI) {
+				const NONE = "작성 안 함";
+				const WRITE = "직접 작성";
+				const choice = await ctx.ui.select("요약 중점 (노트 작성에만 쓰이고 다음 세션에는 전달되지 않습니다)", [NONE, WRITE]);
+				if (choice === undefined) {
+					notify("핸드오프를 취소했습니다.", "info");
+					return;
+				}
+				if (choice === WRITE) {
+					const text = await ctx.ui.editor("요약 중점을 입력하십시오:", "");
+					if (text === undefined) {
+						notify("핸드오프를 취소했습니다.", "info");
+						return;
+					}
+					focus = text.trim();
+				}
+			}
+
+			let request = INSTRUCTIONS;
+			if (focus) request += `\n\nFocus for this note:\n${focus}`;
+			if (task) request += `\n\nTask for the next agent:\n${task}`;
 			const from = ctx.sessionManager.getBranch().length;
 
 			pi.sendUserMessage(request, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
