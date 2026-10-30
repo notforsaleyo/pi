@@ -50,16 +50,53 @@ A mode switch is a signal. Moving to BASH means the user accepts the plan or spe
 - Do not edit or write files, and do not run anything that changes state (builds, tests, installs, scripts, network writes).
 - Answer with findings and a concrete plan: steps, files affected, risks, open questions. Ask when a decision is the user's.
 
-## SPEC - write the spec, not the code
-- Everything allowed in PLAN, plus creating and editing spec artifacts under ./openspec/ (including via the openspec CLI).
-- The OpenSpec intent-driven schema writes durable ADRs to the repository-root ./adr/ folder (outside ./openspec/), so creating and editing files under ./adr/ is also allowed. The per-change ADR review file (./openspec/changes/<change>/adr.md) is already covered by ./openspec/.
-- Do not change code or config outside ./openspec/ and ./adr/. Do not implement the spec.
-- Ground the spec in what you actually read. Mark assumptions and list unresolved questions at the end.
+## SPEC - write specifications and documentation, not implementation
+- Everything allowed in PLAN, plus creating and editing planning/specification artifacts under ./openspec/ (including via the openspec CLI) and documentation under ./docs/.
+- These paths permit documentation and planning work, not implementation or workflow reconfiguration. Changes to code, project configuration, schemas, skills, or agent/harness instructions require BASH, even when a file is inside an allowed directory.
+- Do not edit outside those documentation paths or implement the spec. Project-specific read-only folders remain read-only.
+- Ground the documents in what you actually read. Distinguish owner intent, current facts, and proposals; mark assumptions and unresolved questions.
 
 ## BASH - execute and edit
 - Full freedom: edit, write, run commands, delegate to workers.
 - Verify your work by running it when you can.
 - Still ask before destructive or hard-to-reverse actions: deleting files, force-push, installing or removing packages.`;
+
+const reminderBlock = (id: ModeId) => ({
+	type: "text" as const,
+	text: `<system-reminder>Current mode: ${MODES[id].label}</system-reminder>`,
+});
+
+/**
+ * 요청에 reminder 를 붙인다. 결과는 세션에 저장된 데이터(메시지와 모드 변경 entry 의 timestamp)만으로 정해지므로
+ * 같은 히스토리에서는 요청마다 항상 같다. 이미 보낸 메시지의 내용이 나중에 바뀌면 그 뒤에 서명된
+ * thinking 이 전부 prefix_binding_mismatch 로 버려진다.
+ *
+ * - user 메시지: 보낸 시점의 모드(modeAt)를 붙인다.
+ * - 턴 도중 모드가 바뀐 경우: 바뀐 뒤 처음 오는 toolResult 에 새 모드를 붙인다. 한 번 붙으면 위치가 고정된다.
+ */
+export function annotateMessages(messages: any[], changes: { at: number; mode: ModeId }[]): any[] {
+	const modeAt = (t: number): ModeId => {
+		let found: ModeId = DEFAULT;
+		for (const c of changes) if (c.at <= t) found = c.mode;
+		return found;
+	};
+	let prevTs: number | undefined;
+	return messages.map((m: any) => {
+		const ts = typeof m.timestamp === "number" ? m.timestamp : undefined;
+		const before = prevTs;
+		if (ts !== undefined) prevTs = ts;
+		if (ts === undefined) return m;
+		if (m.role === "user") {
+			const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
+			return { ...m, content: [...content, reminderBlock(modeAt(ts))] };
+		}
+		if (m.role === "toolResult" && before !== undefined && Array.isArray(m.content)) {
+			const now = modeAt(ts);
+			if (now !== modeAt(before)) return { ...m, content: [...m.content, reminderBlock(now)] };
+		}
+		return m;
+	});
+}
 
 export default function (pi: ExtensionAPI) {
 	let mode: ModeId = DEFAULT;
@@ -105,7 +142,7 @@ export default function (pi: ExtensionAPI) {
 	// reminder 는 세션에 저장하지 않고 요청 직전에만 각 user 메시지 끝에 붙인다.
 	// custom_message 로 저장하면 투영(projection)이 만들어질 때마다 새 객체가 되어
 	// pi 의 캐시 워머가 "conversation context changed" 로 멈춘다.
-	// 과거 user 메시지에는 그 시점의 모드를 붙여서(모드 변경 entry 의 timestamp 로 복원) 접두가 매번 같게 유지한다.
+	// 어떤 메시지도 한 번 붙은 reminder 가 나중에 바뀌지 않게 한다(annotateMessages 참고).
 	pi.on("context", (event, ctx) => {
 		const changes: { at: number; mode: ModeId }[] = [];
 		for (const e of ctx.sessionManager.getEntries() as any[]) {
@@ -113,27 +150,9 @@ export default function (pi: ExtensionAPI) {
 				changes.push({ at: Date.parse(e.timestamp), mode: e.data.mode });
 			}
 		}
-		const modeAt = (t: number): ModeId => {
-			let found: ModeId = DEFAULT;
-			for (const c of changes) if (c.at <= t) found = c.mode;
-			return found;
-		};
 
 		// 예전 버전이 저장해 둔 reminder 는 중복되므로 요청에서만 뺀다.
 		const messages = event.messages.filter((m: any) => !(m.role === "custom" && m.customType === REMINDER));
-		let lastUser = -1;
-		messages.forEach((m: any, i: number) => {
-			if (m.role === "user") lastUser = i;
-		});
-
-		return {
-			messages: messages.map((m: any, i: number) => {
-				if (m.role !== "user") return m;
-				const id = i === lastUser ? mode : modeAt(m.timestamp);
-				const block = { type: "text" as const, text: `<system-reminder>Current mode: ${MODES[id].label}</system-reminder>` };
-				const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
-				return { ...m, content: [...content, block] };
-			}),
-		};
+		return { messages: annotateMessages(messages, changes) };
 	});
 }
