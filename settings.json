@@ -5,8 +5,8 @@
   "deviceId": "65b6fc87-9fa1-45df-b4ca-6cf127c54af9",
   "enabledModels": [
     "openai-codex/gpt-6-astra",
-    "openai-codex/gpt-6-luna",
     "openai-codex/gpt-6.1-sol",
+    "openai-codex/gpt-6.1-terra",
     "anthropic/claude-opus-5-5",
     "anthropic/claude-sonnet-5-5",
     "anthropic/claude-haiku-5-5"
