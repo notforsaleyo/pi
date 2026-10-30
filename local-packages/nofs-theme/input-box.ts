@@ -118,6 +118,10 @@ export default function (pi: ExtensionAPI) {
 	installUserMessageBox();
 	let animation = true;
 	let showCacheTimer = true;
+	let currentProvider: string | undefined;
+	// Anthropic + PI_CACHE_RETENTION=long 이면 1시간, 아니면 config 값
+	const ttlSeconds = (base: number) =>
+		currentProvider === "anthropic" && process.env.PI_CACHE_RETENTION === "long" ? 3600 : base;
 	let restartDisplayTimer: (() => void) | undefined;
 	setAnimationEnabled(animation);
 
@@ -141,6 +145,7 @@ export default function (pi: ExtensionAPI) {
 		!!provider && provider !== "openai" && !provider.startsWith("openai-");
 	pi.on("model_select", (event) => {
 		showCacheTimer = supportsCacheTimer(event.model.provider);
+		currentProvider = event.model.provider;
 		g.__piInputBox?.requestRender?.();
 	});
 
@@ -162,13 +167,14 @@ export default function (pi: ExtensionAPI) {
 		g.__piCacheTimerAt = undefined;
 		g.__piInputBox = shared;
 		showCacheTimer = supportsCacheTimer(ctx.model?.provider);
+		currentProvider = ctx.model?.provider;
 		// 애니메이션과 카운트다운이 하나의 갱신 루프를 공유한다.
 		restartDisplayTimer = () => {
 			if (g.__piCacheDisplayTimer) clearInterval(g.__piCacheDisplayTimer);
 			g.__piCacheDisplayTimer = setInterval(() => {
 				const lastAssistantAt: number | undefined = g.__piCacheTimerAt;
 				if (animation || (showCacheTimer && lastAssistantAt !== undefined &&
-					Date.now() - lastAssistantAt <= timerCfg.seconds * 1000 + 1000)) {
+					Date.now() - lastAssistantAt <= ttlSeconds(timerCfg.seconds) * 1000 + 1000)) {
 					shared.requestRender?.();
 				}
 			}, animation ? ANIM_MS : 1000);
@@ -206,7 +212,7 @@ export default function (pi: ExtensionAPI) {
 				const parts: string[] = [];
 				const lastAssistantAt: number | undefined = g.__piCacheTimerAt; // 마지막 어시스턴트 응답 시각 = 프롬프트 캐시 갱신 시점
 				if (lastAssistantAt !== undefined) {
-					const ttl = timerCfg.seconds * 1000;
+					const ttl = ttlSeconds(timerCfg.seconds) * 1000;
 					const left = Math.max(0, ttl - (Date.now() - lastAssistantAt));
 					const frac = left / ttl;
 					parts.push(bold(fg(timerColor(frac), formatRemaining(left))) + " ");
