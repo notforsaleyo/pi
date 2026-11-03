@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.4.0",
+  "lastChangelogVersion": "1.5.0",
   "defaultProvider": "anthropic",
   "defaultModel": "claude-sonnet-5-5",
   "deviceId": "65b6fc87-9fa1-45df-b4ca-6cf127c54af9",
@@ -36,7 +36,8 @@
     "./local-packages/nofs-pi-mod",
     "git:github.com/earendil-works/pi-review",
     "npm:@yusukeshib/pi-stash",
-    "npm:pi-context-view"
+    "npm:pi-context-view",
+    "npm:@dietrichgebert/ponytail"
   ],
   "autocompleteMaxVisible": 5,
   "defaultTools": [
@@ -61,5 +62,8 @@
   "fullscreenCopyOnSelect": false,
   "compaction": {
     "enabled": true
+  },
+  "extensionChangelogVersions": {
+    "{\"source\":\"npm:@gotgenes/pi-anthropic-auth\",\"scope\":\"user\"}": "3.4.4"
   }
 }
