@@ -1,4 +1,4 @@
 {
-  "provider": "anthropic",
-  "model": "claude-sonnet-5-5"
+  "provider": "openai-codex",
+  "model": "gpt-6.1-sol"
 }
