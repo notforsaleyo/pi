@@ -12,5 +12,5 @@
 
 # Git commits
 
-1. Commit only when the user has given explicit permission to commit.
-2. Unless the user has explicitly waived the commit message review, always present the commit message for the user's review before committing.
+1. Unless the user has explicitly waived the commit message review, always present the commit message for the user's review before committing.
+2. When a change with a separate purpose arises, check the commit boundary before mixing it into existing work and suggest committing the current unit when appropriate. Give a brief nudge, not a draft commit message.
