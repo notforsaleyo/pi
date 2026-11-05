@@ -3,18 +3,16 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { BLUE, fg, GREEN, RED, YELLOW } from "./colors.ts";
+import { gitLabel, watchGitStatus, type GitStatus } from "./footer-git.ts";
 
 // One-line footer:
-//   <folder> - <session name>   <git branch>   <model> - <tokens> - <cache ratio: whole session> - <cache ratio: moving avg of last 5 turns>
+//   <folder> - <session name>   <git status>   ctx <used>/<total> - <cache: session> - <cache: last 5 turns>
 // Needs a Nerd Font for the icons.
 
 const ICON = {
 	folder: "\uf07b",
-	up: "\ueaf4",
-	down: "\ueaf3",
 	branch: "\uf126",
 	noGit: "\uf05e",
-	model: "\uf4bc",
 	cache: "\uf1c0",
 	cacheRecent: "\uf017",
 };
@@ -28,7 +26,6 @@ const fmt = (n: number) => (n < 1000 ? `${n}` : n < 1_000_000 ? `${(n / 1000).to
 
 interface Usage {
 	input: number;
-	output: number;
 	cacheRead: number;
 	cacheWrite: number;
 	recentRead: number;
@@ -36,23 +33,26 @@ interface Usage {
 }
 
 export default function (pi: ExtensionAPI) {
+	let gitMonitor: ReturnType<typeof watchGitStatus> | undefined;
+	pi.on("agent_settled", () => gitMonitor?.refresh());
+	pi.on("session_shutdown", () => gitMonitor?.dispose());
 	// Loaded as a local package listed after npm:@sreetej510/pi-usage in settings.json "packages",
 	// so this session_start handler runs after pi-usage's and its setFooter call wins.
 	pi.on("session_start", (_e, ctx) => {
+		if (!ctx.hasUI) return;
 		// Cache countdown redraws also refresh the footer; only re-sum usage when the leaf changes.
 		let cachedLeaf: string | null | undefined;
-		let cached: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, recentRead: 0, recentTotal: 0 };
+		let cached: Usage = { input: 0, cacheRead: 0, cacheWrite: 0, recentRead: 0, recentTotal: 0 };
 		const usage = (sm: ExtensionContext["sessionManager"]): Usage => {
 			const leaf = sm.getLeafId();
 			if (leaf === cachedLeaf) return cached;
-			const u: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, recentRead: 0, recentTotal: 0 };
+			const u: Usage = { input: 0, cacheRead: 0, cacheWrite: 0, recentRead: 0, recentTotal: 0 };
 			const all: AssistantMessage["usage"][] = [];
 			for (const e of sm.getBranch()) {
 				if (e.type === "message" && e.message.role === "assistant") {
 					const m = (e.message as AssistantMessage).usage;
 					all.push(m);
 					u.input += m.input;
-					u.output += m.output;
 					u.cacheRead += m.cacheRead;
 					u.cacheWrite += m.cacheWrite;
 				}
@@ -67,10 +67,17 @@ export default function (pi: ExtensionAPI) {
 		};
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
-			const unsub = footerData.onBranchChange(() => tui.requestRender());
+			gitMonitor?.dispose();
+			let gitStatus: GitStatus | null | undefined;
+			const monitor = watchGitStatus(ctx.cwd, (status) => {
+				gitStatus = status;
+				tui.requestRender();
+			}, () => ctx.ui.notify("Git 파일 감시에 실패했습니다. 턴 종료 시 상태를 갱신합니다.", "warning"));
+			gitMonitor = monitor;
+			const unsub = footerData.onBranchChange(() => monitor.refresh());
 
 			const build = (width: number): string[] => {
-				const { input, output, cacheRead, cacheWrite, recentRead, recentTotal } = usage(ctx.sessionManager);
+				const { input, cacheRead, cacheWrite, recentRead, recentTotal } = usage(ctx.sessionManager);
 
 				// left: folder - session name
 				const folder = basename(ctx.cwd ?? process.cwd()) || "/";
@@ -78,11 +85,14 @@ export default function (pi: ExtensionAPI) {
 				const left =
 					theme.fg("accent", `${ICON.folder} ${folder}`) + theme.fg("dim", " - ") + (name ? theme.fg("text", name) : ANON);
 
-				// middle: git branch
-				const branch = footerData.getGitBranch();
-				const mid = branch ? theme.fg("success", `${ICON.branch} ${branch}`) : theme.fg("dim", `${ICON.noGit} no git`);
+				// Behind always wins over dirty; an unavailable query is never painted as clean.
+				const mid = gitStatus
+					? fg(gitStatus.behind > 0 ? RED : gitStatus.dirty ? YELLOW : BLUE, `${ICON.branch} ${gitLabel(gitStatus)}`)
+					: gitStatus === null
+						? theme.fg("dim", `${ICON.noGit} no git`)
+						: theme.fg("dim", `${ICON.branch} ${footerData.getGitBranch() ?? "git"} ?`);
 
-				// right: model - tokens - cache ratio (session) - cache ratio (recent)
+				// right: context - cache ratio (session) - cache ratio (recent)
 				const ratioStyle = (icon: string, read: number, total: number) => {
 					const ratio = total > 0 ? (read / total) * 100 : undefined;
 					const text = `${icon} ${ratio === undefined ? "--" : `${ratio.toFixed(1)}%`}`;
@@ -95,12 +105,11 @@ export default function (pi: ExtensionAPI) {
 					theme.fg("dim", " - ") +
 					ratioStyle(ICON.cacheRecent, recentRead, recentTotal);
 				const sep = theme.fg("dim", " - ");
-				const right =
-					theme.fg("text", `${ICON.model} ${ctx.model?.id ?? "no-model"}`) +
-					sep +
-					theme.fg("dim", `${ICON.up} ${fmt(input)} ${ICON.down} ${fmt(output)}`) +
-					sep +
-					ratioStyled;
+				const context = ctx.getContextUsage();
+				const current = context?.tokens == null ? "--" : fmt(context.tokens);
+				const capacity = context?.contextWindow ?? ctx.model?.contextWindow;
+				const total = capacity == null ? "--" : fmt(capacity);
+				const right = theme.fg("text", `ctx ${current}/${total}`) + sep + ratioStyled;
 
 				const lw = visibleWidth(left);
 				const mw = visibleWidth(mid);
@@ -122,7 +131,11 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			return {
-				dispose: unsub,
+				dispose() {
+					unsub();
+					monitor.dispose();
+					if (gitMonitor === monitor) gitMonitor = undefined;
+				},
 				invalidate() {},
 				// pi/ctx go stale after reload or session replacement; never throw from render.
 				render(width: number): string[] {
