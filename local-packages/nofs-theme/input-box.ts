@@ -125,6 +125,25 @@ export default function (pi: ExtensionAPI) {
 	let restartDisplayTimer: (() => void) | undefined;
 	setAnimationEnabled(animation);
 
+	let workingFrame = "";
+	function stopWorkingIndicator(): void {
+		if (g.__piWorkingTimer) clearInterval(g.__piWorkingTimer);
+		g.__piWorkingTimer = undefined;
+	}
+	function startWorkingIndicator(ctx: ExtensionContext): void {
+		stopWorkingIndicator();
+		if (!ctx.hasUI) return;
+		const update = () => {
+			const choices = [..."▤▥▦▧▨▩"].filter((frame) => frame !== workingFrame);
+			workingFrame = choices[Math.floor(Math.random() * choices.length)]!;
+			ctx.ui.setWorkingIndicator({ frames: [ctx.ui.theme.fg("muted", `${workingFrame} `)] });
+		};
+		update();
+		g.__piWorkingTimer = setInterval(update, 180);
+	}
+	pi.on("agent_start", (_event, ctx) => startWorkingIndicator(ctx));
+	pi.on("agent_settled", stopWorkingIndicator);
+
 	pi.registerCommand("animation", {
 		description: "Toggle name/max effort animation: /animation [on|off] (session only)",
 		handler: async (args, ctx) => {
@@ -154,6 +173,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", () => {
+		stopWorkingIndicator();
 		restartDisplayTimer = undefined;
 		g.__piInputBox = undefined;
 		if (g.__piCacheDisplayTimer) clearInterval(g.__piCacheDisplayTimer);
@@ -181,6 +201,9 @@ export default function (pi: ExtensionAPI) {
 		};
 		restartDisplayTimer();
 		ctx.ui.setWidget("agent-mode", undefined); // 모드 라벨은 테두리에 표시
+		stopWorkingIndicator();
+		ctx.ui.setWorkingIndicator({ frames: [ctx.ui.theme.fg("muted", "▤ ")] });
+		if (!ctx.isIdle()) startWorkingIndicator(ctx);
 
 		class InputBox extends CustomEditor {
 			constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) {
