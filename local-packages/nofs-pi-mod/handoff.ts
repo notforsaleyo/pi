@@ -2,8 +2,9 @@ import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
-// /handoff [--purge] [--force] [작업]: 현재 세션(따뜻한 캐시)에 핸드오프 노트를 쓰게 하고, <cwd>/.pi/handoff.md 에 저장한 뒤
-//   새 세션을 시작한다. 새 세션의 입력창에는 /handover 가 채워져 있다.
+// /handoff [이름] (--purge) (--force) (-- 작업): 현재 세션(따뜻한 캐시)에 핸드오프 노트를 쓰게 하고,
+//   <cwd>/.pi/handoff.md 에 저장한 뒤 지정한 이름으로 새 세션을 시작한다. 입력창에는 /handover 가 채워져 있다.
+//   이름은 첫 -- 앞까지의 문자열을 trim 한 값이며 필수다. 단독 -- 뒤는 전부 작업으로 취급한다.
 //   UI 가 있으면 노트 작성 전에 요약 중점을 묻는다 (작성 안 함 / 직접 작성). Esc 는 핸드오프 전체를 취소한다.
 //   요약 중점은 노트를 쓰는 현재 세션에만 전달되고 handoff.md 에는 저장하지 않는다.
 //   작업은 노트 작성 요청과 handoff.md 의 ## Task 양쪽에 들어간다.
@@ -16,6 +17,30 @@ import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earen
 const TIMEOUT_MS = 5 * 60 * 1000;
 const POLL_MS = 100;
 const SEND_GRACE_MS = 1500;
+const USAGE = "/handoff [다음 세션 이름] (--purge) (--force) (-- 다음 세션에서 할 일)";
+
+export function parseHandoffArgs(args: string) {
+	const optionAt = args.indexOf("--");
+	const name = (optionAt < 0 ? args : args.slice(0, optionAt)).trim();
+	if (!name) return null;
+
+	let rest = optionAt < 0 ? "" : args.slice(optionAt);
+	let purge = false;
+	let force = false;
+	let task = "";
+	while (rest) {
+		if (/^--(\s|$)/.test(rest)) {
+			task = rest.slice(2).trim();
+			break; // 작업 안의 옵션처럼 보이는 문자열은 다시 해석하지 않는다.
+		}
+		const option = /^(--purge|--force)(\s+|$)/.exec(rest);
+		if (!option) return null;
+		if (option[1] === "--purge") purge = true;
+		else force = true;
+		rest = rest.slice(option[0].length);
+	}
+	return { name, purge, force, task };
+}
 
 const handoffPath = (cwd: string) => join(cwd, ".pi", "handoff.md");
 const exists = (p: string) => access(p).then(() => true, () => false);
@@ -90,25 +115,20 @@ async function waitForNote(ctx: ExtensionCommandContext, from: number, request: 
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("handoff", {
-		description: "Save a handoff note to .pi/handoff.md and move to a new session (usage: /handoff [--purge] [--force] [task for next session])",
+		description: `Save a handoff note to .pi/handoff.md and move to a named new session (usage: ${USAGE})`,
 		handler: async (args, ctx) => {
 			const notify = (message: string, level: "info" | "warning" | "error") => ctx.ui.notify(message, level);
 
-			let rest = args.trim();
-			let purge = false;
-			let force = false;
-			for (;;) {
-				const m = /^(--purge|--force)(\s+|$)/.exec(rest);
-				if (!m) break;
-				if (m[1] === "--purge") purge = true;
-				else force = true;
-				rest = rest.slice(m[0].length);
+			const parsed = parseHandoffArgs(args);
+			if (!parsed) {
+				notify(`이름이 없거나 옵션 형식이 잘못되었습니다. 사용법: ${USAGE}`, "warning");
+				return;
 			}
-			const task = rest.trim();
+			const { name, purge, force, task } = parsed;
 
 			const file = handoffPath(ctx.cwd);
 			if (!force && (await exists(file))) {
-				notify(`${file} 이(가) 이미 있습니다. 아직 /handover 로 소비되지 않은 핸드오프일 수 있어 중단합니다. 덮어쓰려면 /handoff --force 를 사용하십시오.`, "warning");
+				notify(`${file} 이(가) 이미 있습니다. 아직 /handover 로 소비되지 않은 핸드오프일 수 있어 중단합니다. 덮어쓰려면 /handoff [다음 세션 이름] --force 를 사용하십시오.`, "warning");
 				return;
 			}
 
@@ -169,6 +189,9 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const result = await ctx.newSession({
+				setup: async (sessionManager) => {
+					sessionManager.appendSessionInfo(name);
+				},
 				withSession: async (newCtx) => {
 					newCtx.ui.setEditorText("/handover");
 					if (purge && oldFile) {
