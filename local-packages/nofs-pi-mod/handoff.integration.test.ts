@@ -44,6 +44,7 @@ test("real Pi runtime: default off, safe mid-task handoff, mode/model inheritanc
 				const first = !summary && !resume && !context.messages.some((m: any) => m.role === "toolResult");
 				const fail = summary && scenario === "note-error";
 				if (summary) {
+					assert(prompt.includes("Focus for this note:\nFocus on the current task and the conversation since that task began. Exclude earlier discussions unrelated to the current task. Retain earlier context only when it directly affects the current task's requirements, decisions, constraints, or pending approvals. Do not treat unrelated earlier requests as unfinished work to resume."));
 					assert(finishedTools >= 2 && finishedTools % 2 === 0, "both sibling tools must finish before summary");
 					if (scenario === "new-input") void runtime.session.prompt("New user request", { streamingBehavior: "followUp" });
 					if (scenario === "off-during-note") void runtime.session.prompt("/auto-handoff off");

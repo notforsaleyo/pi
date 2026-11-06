@@ -166,7 +166,9 @@ export default function (pi: ExtensionAPI) {
 		if (auto.disposed || (automatic && !auto.enabled)) return;
 
 		// 수동 실행에서만 요약 중점을 묻는다.
-		let focus = "";
+		let focus = automatic
+			? "Focus on the current task and the conversation since that task began. Exclude earlier discussions unrelated to the current task. Retain earlier context only when it directly affects the current task's requirements, decisions, constraints, or pending approvals. Do not treat unrelated earlier requests as unfinished work to resume."
+			: "";
 		if (!automatic && ctx.hasUI) {
 			const NONE = "작성 안 함";
 			const WRITE = "직접 작성";
