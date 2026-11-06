@@ -6,13 +6,14 @@ import { BLUE, fg, GREEN, RED, YELLOW } from "./colors.ts";
 import { gitLabel, watchGitStatus, type GitStatus } from "./footer-git.ts";
 
 // One-line footer:
-//   <folder> - <session name>   <git status>   ctx <used>/<total> - <cache: session> - <cache: last 5 turns>
+//   <folder> - <session name>   <git status>   <context icon> <used>/<total> - <cache: session> - <cache: last 5 turns>
 // Needs a Nerd Font for the icons.
 
 const ICON = {
 	folder: "\uf07b",
 	branch: "\uf126",
 	noGit: "\uf05e",
+	context: "\uf2db",
 	cache: "\uf1c0",
 	cacheRecent: "\uf017",
 };
@@ -109,7 +110,7 @@ export default function (pi: ExtensionAPI) {
 				const current = context?.tokens == null ? "--" : fmt(context.tokens);
 				const capacity = context?.contextWindow ?? ctx.model?.contextWindow;
 				const total = capacity == null ? "--" : fmt(capacity);
-				const right = theme.fg("text", `ctx ${current}/${total}`) + sep + ratioStyled;
+				const right = theme.fg("text", `${ICON.context} ${current}/${total}`) + sep + ratioStyled;
 
 				const lw = visibleWidth(left);
 				const mw = visibleWidth(mid);

@@ -205,7 +205,7 @@ test("real Git and filesystem watcher detect an external file creation", async (
 	}
 });
 
-test("footer renders ctx and existing cache ratios, with requested Git colors", () => {
+test("footer renders context chip and existing cache ratios, with requested Git colors", () => {
 	// Execute the extension against a small UI host, without loading Pi or touching the user's session.
 	const source = stripTypeScriptTypes(fs.readFileSync(new URL("./footer.ts", import.meta.url), "utf8"))
 		.replace(/^import[^;]+;\r?$/gm, "")
@@ -243,15 +243,15 @@ test("footer renders ctx and existing cache ratios, with requested Git colors", 
 		gitChanged!({ branch: "main", dirty, ahead: 2, behind });
 		colored.length = 0;
 		const line = component!.render(200)[0]!;
-		assert(line.includes("ctx 32.1k/200.0k"));
+		assert(line.includes("\uf2db 32.1k/200.0k"));
 		assert.equal(line.match(/90\.0%/g)?.length, 2);
 		assert(!line.includes("must-not-appear") && !line.includes("999"));
 		assert.deepEqual(colored[0]!.color, color);
 	}
 	context = { tokens: null, contextWindow: 200000 };
-	assert(component!.render(200)[0]!.includes("ctx --/200.0k"));
+	assert(component!.render(200)[0]!.includes("\uf2db --/200.0k"));
 	context = undefined;
-	assert(component!.render(200)[0]!.includes("ctx --/200.0k"));
+	assert(component!.render(200)[0]!.includes("\uf2db --/200.0k"));
 	gitChanged!(null);
 	assert(component!.render(200)[0]!.includes("no git"));
 	gitChanged!(undefined);
