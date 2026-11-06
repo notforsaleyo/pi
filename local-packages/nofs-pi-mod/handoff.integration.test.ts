@@ -11,12 +11,12 @@ const packageDir = process.env.PI_TEST_PACKAGE;
 const textOf = (message: any) => typeof message?.content === "string" ? message.content
 	: (message?.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
 
-test("real Pi runtime: default off, safe mid-task handoff, mode/model inheritance and failure recovery", {
+test("real Pi runtime: one nudge, model-chosen handoff, mode/model inheritance and failure recovery", {
 	skip: !packageDir, timeout: 60_000,
 }, async (t) => {
 	const sdk = await import(pathToFileURL(join(packageDir!, "dist/index.js")).href);
 	const { createAssistantMessageEventStream } = await import(pathToFileURL(join(packageDir!, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js")).href);
-	for (const scenario of ["off", "plan", "spec", "bash", "note-error", "cancel-switch", "existing-note", "new-input", "off-during-note"] as const) {
+	for (const scenario of ["off", "plan", "spec", "bash", "no-request", "off-after-nudge", "input-after-request", "note-error", "cancel-switch", "existing-note", "new-input", "off-during-note"] as const) {
 		await t.test(scenario, { timeout: 8000 }, async (t) => {
 			const cwd = await mkdtemp(join(tmpdir(), "pi-auto-handoff-integration-"));
 			let runtime: any;
@@ -28,6 +28,7 @@ test("real Pi runtime: default off, safe mid-task handoff, mode/model inheritanc
 			let finishedTools = 0;
 			let draft = "unsent draft";
 			let generation = 0;
+			let workStep = 0;
 			const modelDef = { id: "handoff-test", name: "Handoff Test", api: "openai-responses", baseUrl: "http://unused.invalid",
 				reasoning: true, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 				contextWindow: 100_000, maxTokens: 4096 };
@@ -41,11 +42,20 @@ test("real Pi runtime: default off, safe mid-task handoff, mode/model inheritanc
 				const resume = prompt.startsWith("Continue only the unfinished work");
 				const interrupted = !!options?.signal?.aborted;
 				if (!interrupted) requests.push({ model, prompt, messages: context.messages });
-				const first = !summary && !resume && !context.messages.some((m: any) => m.role === "toolResult");
+				const work = !summary && !resume && !interrupted;
+				if (work) workStep++;
+				const nudges = context.messages.filter((m: any) => textOf(m).includes("Context usage has reached the automatic handoff threshold."));
+				if (work && workStep === 2 && scenario !== "off") {
+					assert.equal(nudges.length, 1, "one nudge must reach the model before wrap-up work");
+					assert.equal(finishedTools, 2 + (generation - 1) * 4);
+					assert.equal(options?.signal?.aborted, false, "threshold must not abort the model");
+					if (scenario === "off-after-nudge") void runtime.session.prompt("/auto-handoff off");
+				}
+				if (work && workStep === 3 && scenario !== "off") assert.equal(nudges.length, 1, "wrap-up must not repeat the nudge");
 				const fail = summary && scenario === "note-error";
 				if (summary) {
 					assert(prompt.includes("Focus for this note:\nFocus on the current task and the conversation since that task began. Exclude earlier discussions unrelated to the current task. Retain earlier context only when it directly affects the current task's requirements, decisions, constraints, or pending approvals. Do not treat unrelated earlier requests as unfinished work to resume."));
-					assert(finishedTools >= 2 && finishedTools % 2 === 0, "both sibling tools must finish before summary");
+					assert.equal(finishedTools, scenario === "spec" ? 3 : generation * 4, "initial, wrap-up and any handoff sibling tools must all finish before summary");
 					if (scenario === "new-input") void runtime.session.prompt("New user request", { streamingBehavior: "followUp" });
 					if (scenario === "off-during-note") void runtime.session.prompt("/auto-handoff off");
 				}
@@ -54,14 +64,23 @@ test("real Pi runtime: default off, safe mid-task handoff, mode/model inheritanc
 					assert.match(prompt, new RegExp(`Current mode: ${mode.toUpperCase()}`));
 					assert(context.messages.some((m: any) => textOf(m) === "Saved context: both probes completed; finish the requested work."));
 				}
+				const calls = !work ? [] : workStep === 1
+					? [1, 2].map((n) => ({ type: "toolCall", id: `probe-${generation}-${n}`, name: "probe", arguments: { n } }))
+					: workStep === 2 && scenario !== "off"
+						? [{ type: "toolCall", id: `wrap-${generation}`, name: "probe", arguments: { n: 3 } }]
+						: workStep === 3 && !["off", "no-request", "off-after-nudge"].includes(scenario)
+							? [
+								{ type: "toolCall", id: `handoff-${generation}`, name: "request_handoff", arguments: {} },
+								...(scenario === "spec" ? [] : [{ type: "toolCall", id: `sibling-${generation}`, name: "probe", arguments: { n: 4 } }]),
+							] : [];
 				const message = {
 					role: "assistant", api: model.api, provider: model.provider, model: model.id, timestamp: Date.now(),
-					content: interrupted || fail ? [] : first
-						? [1, 2].map((n) => ({ type: "toolCall", id: `probe-${generation}-${n}`, name: "probe", arguments: { n } }))
+					content: interrupted || fail ? [] : calls.length
+						? calls
 						: [{ type: "text", text: summary ? "Saved context: both probes completed; finish the requested work." : "Completed." }],
 					usage: { input: 65_000, output: 20, cacheRead: 0, cacheWrite: 0, totalTokens: 65_020,
 						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-					stopReason: interrupted ? "aborted" : fail ? "error" : first ? "toolUse" : "stop",
+					stopReason: interrupted ? "aborted" : fail ? "error" : calls.length ? "toolUse" : "stop",
 					...(fail ? { errorMessage: "test note failure" } : {}),
 				};
 				queueMicrotask(() => {
@@ -73,6 +92,7 @@ test("real Pi runtime: default off, safe mid-task handoff, mode/model inheritanc
 			};
 			const createRuntime = async ({ sessionManager, sessionStartEvent }: any) => {
 				generation++;
+				workStep = 0;
 				const settingsManager = sdk.SettingsManager.inMemory({
 					packages: [], compaction: { enabled: true }, retry: { enabled: false }, cacheWarming: "off",
 				});
@@ -97,6 +117,7 @@ test("real Pi runtime: default off, safe mid-task handoff, mode/model inheritanc
 										await new Promise((resolve) => setTimeout(resolve, n === 1 ? 10 : 1));
 										assert.equal(signal.aborted, false, "running tools must not be cancelled");
 										finishedTools++;
+										if (n === 4 && scenario === "input-after-request") void runtime.session.prompt("New user request", { streamingBehavior: "followUp" });
 										return { content: [{ type: "text", text: `probe ${n} complete` }], details: {} };
 									},
 								});
@@ -106,7 +127,7 @@ test("real Pi runtime: default off, safe mid-task handoff, mode/model inheritanc
 					},
 				});
 				const result = await sdk.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent,
-					model: generation === 1 ? originalModel : fallbackModel, thinkingLevel: generation === 1 ? "high" : "low", tools: ["probe"],
+					model: generation === 1 ? originalModel : fallbackModel, thinkingLevel: generation === 1 ? "high" : "low", tools: ["probe", "request_handoff"],
 				});
 				assert.deepEqual(services.resourceLoader.getExtensions().errors, []);
 				return { ...result, services, diagnostics: services.diagnostics };
@@ -141,9 +162,16 @@ test("real Pi runtime: default off, safe mid-task handoff, mode/model inheritanc
 			if (scenario !== "off") await original.prompt("/auto-handoff on");
 			await original.prompt("Run both probes and finish the work.");
 			assert.deepEqual(errors, [], JSON.stringify(errors));
+			assert.deepEqual(original.sessionManager.getBranch().filter((e: any) => e.type === "message" && e.message.role === "toolResult" && e.message.isError), [], "all model-issued tools must execute successfully");
 			assert(existsSync(originalFile), "original session must survive");
-			assert.equal(finishedTools, 2);
-			if (scenario === "off") {
+			assert.equal(finishedTools, scenario === "off" ? 2 : ["spec", "no-request", "off-after-nudge"].includes(scenario) ? 3 : 4);
+			if (["no-request", "off-after-nudge", "input-after-request"].includes(scenario)) {
+				assert.equal(runtime.session, original, "only an accepted model request may switch sessions");
+				assert.equal((globalThis as any).__piAutoHandoff.enabled, scenario !== "off-after-nudge");
+				assert.equal(requests.length, scenario === "input-after-request" ? 5 : 3);
+				if (scenario === "input-after-request") assert(requests.some((r) => r.prompt.startsWith("New user request")));
+				assert.equal(existsSync(join(cwd, ".pi/handoff.md")), false);
+			} else if (scenario === "off") {
 				assert.equal(runtime.session, original);
 				assert.equal(requests.length, 2);
 				assert.equal((globalThis as any).__piAutoHandoff.enabled, false);
@@ -163,7 +191,7 @@ test("real Pi runtime: default off, safe mid-task handoff, mode/model inheritanc
 				assert.equal((globalThis as any).__piAgentMode.id, mode);
 				assert.equal((globalThis as any).__piAutoHandoff.enabled, true);
 				assert.equal(draft, "unsent draft");
-				assert.equal(requests.length, 3, "work, summary, continuation; no recursive summary");
+				assert.equal(requests.length, 5, "work, wrap-up, model handoff request, summary, continuation; no recursive summary");
 				assert.equal(existsSync(join(cwd, ".pi/handoff.md")), false);
 				assert.match(await readFile(runtime.session.sessionFile, "utf8"), /Saved context/);
 				if (scenario === "bash") {
@@ -172,7 +200,7 @@ test("real Pi runtime: default off, safe mid-task handoff, mode/model inheritanc
 					assert.equal(runtime.session.sessionManager.getSessionName(), "작업명_2");
 					assert.equal(runtime.session.sessionManager.getHeader().parentSession, firstFile);
 					assert.equal((globalThis as any).__piAgentMode.id, "bash");
-					assert.equal(requests.length, 6);
+					assert.equal(requests.length, 10);
 					assert.deepEqual(errors, []);
 					await runtime.newSession();
 					assert.equal((globalThis as any).__piAutoHandoff.enabled, false);

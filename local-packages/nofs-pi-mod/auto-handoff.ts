@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export const AUTO_HANDOFF_ENTRY = "auto-handoff";
+const NUDGE_ENTRY = "auto-handoff-nudge";
+const NUDGE = "Context usage has reached the automatic handoff threshold. Do not start a new unit of work or try to finish the entire remaining request. Bring only the work currently in progress to a nearby safe stopping point, including any necessary checks. Respect the current mode and pending approvals. When ready, call request_handoff by itself; the harness will then ask you to write the handoff note and pass it to the next session. If already finished or blocked, request handoff without doing additional work.";
 export const AUTO_HANDOFF_TASK = "Continue only the unfinished work already requested by the user, from the recorded stopping point. Do not repeat completed work or expand the scope. Respect pending approvals and unanswered questions; if blocked or everything is complete, stop and wait for the user.";
 
 type Thresholds = { providers: Record<string, number>; models: Record<string, number> };
@@ -39,6 +41,7 @@ export function registerAutoHandoff(pi: ExtensionAPI, handoff: (ctx: ExtensionCo
 	const state = { enabled: false, busy: false, disposed: false };
 	const g = globalThis as any;
 	let pending = false;
+	let nudged = false;
 	let interrupted = false;
 	let runningAuto = false;
 	let firstResumeTurn = false;
@@ -55,15 +58,22 @@ export function registerAutoHandoff(pi: ExtensionAPI, handoff: (ctx: ExtensionCo
 	};
 	const setEnabled = (enabled: boolean) => {
 		pi.appendEntry(AUTO_HANDOFF_ENTRY, { enabled });
+		if (!enabled || !state.enabled) nudged = false;
 		state.enabled = enabled;
 		if (!enabled) pending = false;
 		render();
 	};
 	const restore = (ctx: ExtensionContext) => {
 		state.enabled = false;
+		nudged = false;
 		for (const entry of ctx.sessionManager.getBranch()) {
 			if (entry.type === "custom" && entry.customType === AUTO_HANDOFF_ENTRY &&
-				typeof (entry.data as any)?.enabled === "boolean") state.enabled = (entry.data as any).enabled;
+				typeof (entry.data as any)?.enabled === "boolean") {
+				const enabled = (entry.data as any).enabled;
+				if (!enabled || !state.enabled) nudged = false;
+				state.enabled = enabled;
+			}
+			if (entry.type === "custom_message" && entry.customType === NUDGE_ENTRY && state.enabled) nudged = true;
 		}
 		if (!config) state.enabled = false;
 		pending = false;
@@ -120,19 +130,46 @@ export function registerAutoHandoff(pi: ExtensionAPI, handoff: (ctx: ExtensionCo
 		},
 	});
 
+	pi.registerTool({
+		name: "request_handoff",
+		label: "Request Handoff",
+		description: "After an automatic handoff nudge, call this tool by itself once the current work is at a safe stopping point. The harness will request a handoff note and continue in a new session. This does not authorize additional work or bypass pending approvals.",
+		exposure: "model-only",
+		parameters: { type: "object", properties: {}, additionalProperties: false },
+		async execute(_id, _params, signal, _onUpdate, ctx) {
+			if (!state.enabled || !nudged || state.busy || state.disposed || signal?.aborted || ctx.hasPendingMessages()) {
+				return { content: [{ type: "text", text: "Handoff is not available: it must be enabled and nudged, with no cancellation, queued input, or handoff already in progress. Follow the user's current instructions." }], details: {}, isError: true };
+			}
+			pending = true;
+			return { content: [{ type: "text", text: "Handoff requested. After this tool batch finishes, the harness will ask you to write the note." }], details: {}, terminate: true };
+		},
+	});
+
 	pi.on("turn_end", (event, ctx) => {
-		if (!state.enabled || state.busy || pending || event.outcome !== "completed" || ctx.signal?.aborted || ctx.hasPendingMessages()) return;
+		// 요청 후 abort가 만든 종료 턴은 예약된 전환을 취소하지 않는다.
+		if (!state.enabled || state.busy || interrupted) return;
+		if (event.outcome !== "completed" || ctx.signal?.aborted || ctx.hasPendingMessages()) {
+			pending = false;
+			return;
+		}
+		if (pending) {
+			// 모델이 요청한 뒤에만 멈춘다. 같은 턴의 병렬 도구 결과도 모두 저장된 시점이다.
+			interrupted = true;
+			ctx.abort();
+			return;
+		}
 		// 계승 직후 작업 없이 종료한 응답을 또 넘겨 빈 핸드오프가 반복되는 것을 막는다.
 		const onlyResumed = firstResumeTurn && event.toolResults.length === 0;
 		firstResumeTurn = false;
-		if (onlyResumed || !ctx.model || !config) return;
+		if (onlyResumed || nudged || !ctx.model || !config) return;
 		const threshold = handoffThreshold(config, ctx.model.provider, ctx.model.id);
 		const percent = ctx.getContextUsage()?.percent;
 		if (threshold === undefined || percent == null || !Number.isFinite(percent) || percent < threshold) return;
-		pending = true;
-		interrupted = event.toolResults.length > 0 || event.continue;
-		// turn_end 에서는 모든 병렬/중첩 도구가 끝나고 결과가 저장되어 있다.
-		if (interrupted) ctx.abort();
+		nudged = true;
+		return {
+			entries: [...event.entries, { type: "custom_message", customType: NUDGE_ENTRY, content: NUDGE, display: true }],
+			continue: true,
+		};
 	});
 	pi.on("agent_settled", (event, ctx) => {
 		if (event.aborted && !interrupted) pending = false;

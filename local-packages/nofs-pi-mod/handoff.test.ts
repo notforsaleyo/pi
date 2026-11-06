@@ -23,7 +23,7 @@ test("handoff separates the trimmed name, options, and opaque task", () => {
 
 test("handoff rejects missing names and malformed options before doing any work", async () => {
 	let handler: any;
-	handoff({ on() {}, registerCommand: (name: string, command: any) => {
+	handoff({ on() {}, registerTool() {}, registerCommand: (name: string, command: any) => {
 		if (name === "handoff") handler = command.handler;
 	} } as any);
 	for (const input of ["", "  ", "--purge", "-- 작업", "이름 --unknown", "이름 --forceful", "이름 --purge 작업"]) {
@@ -48,6 +48,7 @@ test("handoff names the replacement session and keeps focus separate from the ta
 	branch.push({ type: "custom", customType: "agent-mode", data: { mode: "spec" } });
 	handoff({
 		on() {},
+		registerTool() {},
 		registerCommand: (name: string, command: any) => {
 			if (name === "handoff") handler = command.handler;
 		},
