@@ -186,6 +186,8 @@ test("real Pi runtime: one nudge, model-chosen handoff, mode/model inheritance a
 				assert.notEqual(runtime.session, original, notices.join("\n"));
 				assert.equal(runtime.session.sessionManager.getSessionName(), "작업명_1");
 				assert.equal(runtime.session.sessionManager.getHeader().parentSession, originalFile);
+				assert.deepEqual(runtime.session.sessionManager.getBranch().findLast((e: any) => e.type === "custom" && e.customType === "auto-handoff-lineage").data,
+					{ rootSession: originalFile, previousSession: originalFile });
 				assert.equal(runtime.session.model.provider, "openai-codex");
 				assert.equal(runtime.session.thinkingLevel, "high");
 				assert.equal((globalThis as any).__piAgentMode.id, mode);
@@ -198,7 +200,9 @@ test("real Pi runtime: one nudge, model-chosen handoff, mode/model inheritance a
 					const firstFile = runtime.session.sessionFile;
 					await runtime.session.prompt("Run both probes again for the next work item.");
 					assert.equal(runtime.session.sessionManager.getSessionName(), "작업명_2");
-					assert.equal(runtime.session.sessionManager.getHeader().parentSession, firstFile);
+					assert.equal(runtime.session.sessionManager.getHeader().parentSession, originalFile);
+					assert.deepEqual(runtime.session.sessionManager.getBranch().findLast((e: any) => e.type === "custom" && e.customType === "auto-handoff-lineage").data,
+						{ rootSession: originalFile, previousSession: firstFile });
 					assert.equal((globalThis as any).__piAgentMode.id, "bash");
 					assert.equal(requests.length, 10);
 					assert.deepEqual(errors, []);

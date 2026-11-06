@@ -19,6 +19,7 @@ const TIMEOUT_MS = 5 * 60 * 1000;
 const POLL_MS = 100;
 const SEND_GRACE_MS = 1500;
 const MODEL_ENTRY = "handoff-model";
+const LINEAGE_ENTRY = "auto-handoff-lineage";
 const USAGE = "/handoff [다음 세션 이름] (--purge) (--force) (-- 다음 세션에서 할 일)";
 
 export function parseHandoffArgs(args: string) {
@@ -225,15 +226,23 @@ export default function (pi: ExtensionAPI) {
 		const selection = { provider: ctx.model.provider, id: ctx.model.id, thinkingLevel: ctx.thinkingLevel ?? pi.getThinkingLevel() };
 		const enabled = auto.enabled;
 		const draft = automatic ? ctx.ui.getEditorText() : "";
+		const lineage = automatic ? ctx.sessionManager.getBranch().findLast((e) =>
+			e.type === "custom" && e.customType === LINEAGE_ENTRY) : undefined;
+		const root = lineage?.type === "custom" ? (lineage.data as { rootSession?: string } | undefined)?.rootSession : undefined;
+		// 자동 전환은 같은 기준 세션 아래에 형제로 만들고, 직전 세션은 별도로 기록한다.
+		const parentSession = automatic && typeof root === "string" && root ? root : oldFile;
 		const result = await ctx.newSession({
-			parentSession: oldFile,
+			parentSession,
 			setup: async (sessionManager) => {
 				sessionManager.appendSessionInfo(name);
 				sessionManager.appendCustomEntry("agent-mode", { mode });
 				sessionManager.appendCustomEntry(AUTO_HANDOFF_ENTRY, { enabled });
 				sessionManager.appendCustomEntry(MODEL_ENTRY, selection);
 				// 사용자 메시지로 먼저 저장하여 재개 실패/종료 시에도 노트를 잃지 않는다.
-				if (automatic) sessionManager.appendMessage({ role: "user", content: note, timestamp: Date.now() });
+				if (automatic) {
+					sessionManager.appendCustomEntry(LINEAGE_ENTRY, { rootSession: parentSession, previousSession: oldFile });
+					sessionManager.appendMessage({ role: "user", content: note, timestamp: Date.now() });
+				}
 			},
 			withSession: async (newCtx) => {
 				if (automatic) {
