@@ -1,0 +1,8 @@
+{
+  "providers": {
+    "openai": 60,
+    "openai-codex": 60,
+    "anthropic": 25
+  },
+  "models": {}
+}

@@ -23,7 +23,7 @@ test("handoff separates the trimmed name, options, and opaque task", () => {
 
 test("handoff rejects missing names and malformed options before doing any work", async () => {
 	let handler: any;
-	handoff({ registerCommand: (name: string, command: any) => {
+	handoff({ on() {}, registerCommand: (name: string, command: any) => {
 		if (name === "handoff") handler = command.handler;
 	} } as any);
 	for (const input of ["", "  ", "--purge", "-- 작업", "이름 --unknown", "이름 --forceful", "이름 --purge 작업"]) {
@@ -44,7 +44,10 @@ test("handoff names the replacement session and keeps focus separate from the ta
 	let sessionName = "";
 	let editorText = "";
 	let focusPrompts = 0;
+	const inherited: Record<string, unknown> = {};
+	branch.push({ type: "custom", customType: "agent-mode", data: { mode: "spec" } });
 	handoff({
+		on() {},
 		registerCommand: (name: string, command: any) => {
 			if (name === "handoff") handler = command.handler;
 		},
@@ -57,7 +60,7 @@ test("handoff names the replacement session and keeps focus separate from the ta
 		},
 	} as any);
 	await handler("  다음  세션  -- 작업\n--purge --force -- 그대로 전달", {
-		cwd, model: {}, hasUI: true,
+		cwd, model: { provider: "anthropic", id: "test" }, thinkingLevel: "high", hasUI: true,
 		ui: {
 			notify() {},
 			select: async () => { focusPrompts++; return "직접 작성"; },
@@ -65,15 +68,21 @@ test("handoff names the replacement session and keeps focus separate from the ta
 		},
 		isIdle: () => true,
 		waitForIdle: async () => {},
-		sessionManager: { getSessionFile: () => undefined, getBranch: () => branch },
+		sessionManager: { getSessionFile: () => undefined, getBranch: () => branch, getEntries: () => branch },
 		newSession: async ({ setup, withSession }: any) => {
-			await setup({ appendSessionInfo: (name: string) => { sessionName = name; } });
+			await setup({
+				appendSessionInfo: (name: string) => { sessionName = name; },
+				appendCustomEntry: (key: string, value: unknown) => { inherited[key] = value; },
+			});
 			await withSession({ ui: { notify() {}, setEditorText: (text: string) => { editorText = text; } } });
 			return { cancelled: false };
 		},
 	});
 	assert.equal(sessionName, "다음  세션");
 	assert.equal(editorText, "/handover");
+	assert.deepEqual(inherited["agent-mode"], { mode: "spec" });
+	assert.deepEqual(inherited["auto-handoff"], { enabled: false });
+	assert.deepEqual(inherited["handoff-model"], { provider: "anthropic", id: "test", thinkingLevel: "high" });
 	assert.equal(focusPrompts, 1);
 	assert.match(request, /Focus for this note:\n요약 중점/);
 	assert.match(request, /Task for the next agent:\n작업\n--purge --force -- 그대로 전달$/);

@@ -277,7 +277,9 @@ export default function (pi: ExtensionAPI) {
 					}
 				}
 				const top = `${head}${border(LINE.repeat(Math.max(1, width - visibleWidth(head))))}`;
-				const bottom = border(LINE.repeat(width));
+				// nf-md-handshake: 자동 핸드오프가 켜진 동안만 하단 왼쪽에 표시한다.
+				const bottomLeft = g.__piAutoHandoff?.enabled ? `${LINE}${LINE} \u{F1218} ` : "";
+				const bottom = border(bottomLeft + LINE.repeat(Math.max(0, width - visibleWidth(bottomLeft))));
 
 				const model = ctx.model;
 				const meta = model

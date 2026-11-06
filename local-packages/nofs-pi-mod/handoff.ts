@@ -1,6 +1,7 @@
 import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { AUTO_HANDOFF_ENTRY, AUTO_HANDOFF_TASK, nextHandoffName, registerAutoHandoff } from "./auto-handoff.ts";
 
 // /handoff [이름] (--purge) (--force) (-- 작업): 현재 세션(따뜻한 캐시)에 핸드오프 노트를 쓰게 하고,
 //   <cwd>/.pi/handoff.md 에 저장한 뒤 지정한 이름으로 새 세션을 시작한다. 입력창에는 /handover 가 채워져 있다.
@@ -17,6 +18,7 @@ import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earen
 const TIMEOUT_MS = 5 * 60 * 1000;
 const POLL_MS = 100;
 const SEND_GRACE_MS = 1500;
+const MODEL_ENTRY = "handoff-model";
 const USAGE = "/handoff [다음 세션 이름] (--purge) (--force) (-- 다음 세션에서 할 일)";
 
 export function parseHandoffArgs(args: string) {
@@ -92,6 +94,8 @@ function findNote(branch: SessionEntry[], from: number, request: string): string
 		}
 	}
 	if (requestAt === -1) return undefined; // 아직 요청이 세션에 기록되지 않음
+	// 요약 도중 들어온 사용자 요청의 답변을 핸드오프 노트로 오인하지 않는다.
+	if (branch.slice(requestAt + 1).some((e) => e.type === "message" && (e.message as any).role === "user")) return null;
 	for (let i = branch.length - 1; i > requestAt; i--) {
 		const e = branch[i]!;
 		if (e.type !== "message" || (e.message as any).role !== "assistant") continue;
@@ -102,112 +106,189 @@ function findNote(branch: SessionEntry[], from: number, request: string): string
 	return undefined; // 아직 응답 없음
 }
 
-async function waitForNote(ctx: ExtensionCommandContext, from: number, request: string): Promise<string | null> {
+async function waitForNote(ctx: ExtensionCommandContext, from: number, request: string, active: () => boolean): Promise<string | null> {
 	const deadline = Date.now() + TIMEOUT_MS;
-	while (Date.now() < deadline) {
-		await ctx.waitForIdle();
-		const note = findNote(ctx.sessionManager.getBranch(), from, request);
-		if (note !== undefined) return note;
-		await sleep(POLL_MS); // 요청이 큐에 있고 아직 실행이 시작되지 않은 경우
+	// pi.sendUserMessage 는 void 이므로 저장된 응답과 idle 상태로 완료를 확인한다.
+	while (active() && Date.now() < deadline) {
+		if (ctx.isIdle()) {
+			const note = findNote(ctx.sessionManager.getBranch(), from, request);
+			if (note !== undefined) return note;
+		}
+		await sleep(POLL_MS);
 	}
+	if (active()) ctx.abort();
 	return null;
 }
 
 export default function (pi: ExtensionAPI) {
-	pi.registerCommand("handoff", {
-		description: `Save a handoff note to .pi/handoff.md and move to a named new session (usage: ${USAGE})`,
-		handler: async (args, ctx) => {
-			const notify = (message: string, level: "info" | "warning" | "error") => ctx.ui.notify(message, level);
+	const auto = registerAutoHandoff(pi, async (ctx) => !!await runHandoff({
+		name: nextHandoffName(ctx.sessionManager.getSessionName()),
+		purge: false, force: false, task: AUTO_HANDOFF_TASK,
+	}, ctx, true));
 
-			const parsed = parseHandoffArgs(args);
-			if (!parsed) {
-				notify(`이름이 없거나 옵션 형식이 잘못되었습니다. 사용법: ${USAGE}`, "warning");
+	pi.on("session_start", async (event, ctx) => {
+		if (event.reason !== "new") return;
+		const entry = ctx.sessionManager.getBranch().findLast((e) => e.type === "custom" && e.customType === MODEL_ENTRY);
+		if (entry?.type !== "custom") return;
+		const selection = entry.data as { provider: string; id: string; thinkingLevel: typeof ctx.thinkingLevel };
+		const model = ctx.modelRegistry.find(selection.provider, selection.id);
+		if (!model || !await pi.setModel(model)) {
+			auto.setEnabled(false);
+			ctx.ui.notify("이전 모델을 복원하지 못했습니다. 자동 재개하지 않습니다.", "error");
+			return;
+		}
+		pi.setThinkingLevel(selection.thinkingLevel ?? pi.getThinkingLevel());
+	});
+
+	const runHandoff = async (parsed: NonNullable<ReturnType<typeof parseHandoffArgs>>, ctx: ExtensionCommandContext, automatic = false) => {
+		const notify = (message: string, level: "info" | "warning" | "error") => ctx.ui.notify(message, level);
+		const { name, purge, force, task } = parsed;
+
+		const file = handoffPath(ctx.cwd);
+		if (!force && (await exists(file))) {
+			notify(`${file} 이(가) 이미 있습니다. 아직 /handover 로 소비되지 않은 핸드오프일 수 있어 중단합니다. 덮어쓰려면 /handoff [다음 세션 이름] --force 를 사용하십시오.`, "warning");
+			return;
+		}
+
+		if (!ctx.model) {
+			notify("모델이 선택되어 있지 않습니다.", "error");
+			return;
+		}
+
+		// newSession 이후에는 ctx 가 이전 세션을 가리키지 않으므로 미리 저장한다.
+		const oldFile = ctx.sessionManager.getSessionFile();
+		if (purge && (!oldFile || !oldFile.includes(`${sep}sessions${sep}`))) {
+			notify("현재 세션 파일 경로를 확인할 수 없어 --purge 를 적용할 수 없습니다. 중단합니다.", "error");
+			return;
+		}
+
+		await ctx.waitForIdle();
+		if (auto.disposed || (automatic && !auto.enabled)) return;
+
+		// 수동 실행에서만 요약 중점을 묻는다.
+		let focus = "";
+		if (!automatic && ctx.hasUI) {
+			const NONE = "작성 안 함";
+			const WRITE = "직접 작성";
+			const choice = await ctx.ui.select("요약 중점 (노트 작성에만 쓰이고 다음 세션에는 전달되지 않습니다)", [NONE, WRITE]);
+			if (choice === undefined) {
+				notify("핸드오프를 취소했습니다.", "info");
 				return;
 			}
-			const { name, purge, force, task } = parsed;
-
-			const file = handoffPath(ctx.cwd);
-			if (!force && (await exists(file))) {
-				notify(`${file} 이(가) 이미 있습니다. 아직 /handover 로 소비되지 않은 핸드오프일 수 있어 중단합니다. 덮어쓰려면 /handoff [다음 세션 이름] --force 를 사용하십시오.`, "warning");
-				return;
-			}
-
-			if (!ctx.model) {
-				notify("모델이 선택되어 있지 않습니다.", "error");
-				return;
-			}
-
-			// newSession 이후에는 ctx 가 이전 세션을 가리키지 않으므로 미리 저장한다.
-			const oldFile = ctx.sessionManager.getSessionFile();
-			if (purge && (!oldFile || !oldFile.includes(`${sep}sessions${sep}`))) {
-				notify("현재 세션 파일 경로를 확인할 수 없어 --purge 를 적용할 수 없습니다. 중단합니다.", "error");
-				return;
-			}
-
-			// 요약 중점: 현재 세션의 노트 작성에만 쓰고 다음 세션에는 전달하지 않는다.
-			let focus = "";
-			if (ctx.hasUI) {
-				const NONE = "작성 안 함";
-				const WRITE = "직접 작성";
-				const choice = await ctx.ui.select("요약 중점 (노트 작성에만 쓰이고 다음 세션에는 전달되지 않습니다)", [NONE, WRITE]);
-				if (choice === undefined) {
+			if (choice === WRITE) {
+				const text = await ctx.ui.editor("요약 중점을 입력하십시오:", "");
+				if (text === undefined) {
 					notify("핸드오프를 취소했습니다.", "info");
 					return;
 				}
-				if (choice === WRITE) {
-					const text = await ctx.ui.editor("요약 중점을 입력하십시오:", "");
-					if (text === undefined) {
-						notify("핸드오프를 취소했습니다.", "info");
+				focus = text.trim();
+			}
+		}
+
+		let request = INSTRUCTIONS;
+		if (automatic) request += "\n\nFor this automatic handoff, include the user's actual goal, unfinished steps, exact stopping point, completed results, and pending approvals/questions. The generic continuation task below does not describe the original request; preserve its specifics here.";
+		if (focus) request += `\n\nFocus for this note:\n${focus}`;
+		if (task) request += `\n\nTask for the next agent:\n${task}`;
+		const from = ctx.sessionManager.getBranch().length;
+
+		pi.sendUserMessage(request, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
+		notify("핸드오프 노트를 만드는 중...", "info");
+		const active = () => !auto.disposed && (!automatic || auto.enabled);
+		const note = await waitForNote(ctx, from, request, active);
+		if (!active()) return;
+		if (!note) {
+			notify("핸드오프 노트를 받지 못했습니다. 현재 세션은 그대로 둡니다.", "error");
+			return;
+		}
+
+		const content = task ? `${note}\n\n---\n\n## Task\n${task}` : note;
+
+		try {
+			await mkdir(dirname(file), { recursive: true });
+			await writeFile(file, content, { encoding: "utf8", flag: force ? "w" : "wx" });
+		} catch (error) {
+			notify(`handoff.md 저장에 실패했습니다: ${(error as Error).message}. 현재 세션은 그대로 둡니다.`, "error");
+			return;
+		}
+
+		if (auto.disposed || (automatic && !auto.enabled)) return;
+		if (automatic && ctx.hasPendingMessages()) {
+			notify("대기 중인 사용자 입력이 있어 자동 전환을 중단했습니다. 핸드오프 노트는 보존합니다.", "warning");
+			return;
+		}
+		const entries = ctx.sessionManager.getEntries();
+		const modeEntry = entries.findLast((e) => e.type === "custom" && e.customType === "agent-mode" &&
+			["plan", "spec", "bash"].includes((e.data as any)?.mode));
+		const mode = modeEntry?.type === "custom" ? (modeEntry.data as { mode: string }).mode : "plan";
+		const selection = { provider: ctx.model.provider, id: ctx.model.id, thinkingLevel: ctx.thinkingLevel ?? pi.getThinkingLevel() };
+		const enabled = auto.enabled;
+		const draft = automatic ? ctx.ui.getEditorText() : "";
+		const result = await ctx.newSession({
+			parentSession: oldFile,
+			setup: async (sessionManager) => {
+				sessionManager.appendSessionInfo(name);
+				sessionManager.appendCustomEntry("agent-mode", { mode });
+				sessionManager.appendCustomEntry(AUTO_HANDOFF_ENTRY, { enabled });
+				sessionManager.appendCustomEntry(MODEL_ENTRY, selection);
+				// 사용자 메시지로 먼저 저장하여 재개 실패/종료 시에도 노트를 잃지 않는다.
+				if (automatic) sessionManager.appendMessage({ role: "user", content: note, timestamp: Date.now() });
+			},
+			withSession: async (newCtx) => {
+				if (automatic) {
+					newCtx.ui.setEditorText(draft);
+					if (newCtx.model?.provider !== selection.provider || newCtx.model?.id !== selection.id ||
+						!(globalThis as any).__piAutoHandoff?.enabled) {
+						newCtx.ui.notify("계승 상태를 복원하지 못해 자동 재개를 중단했습니다. 노트는 보존합니다.", "error");
 						return;
 					}
-					focus = text.trim();
-				}
-			}
-
-			let request = INSTRUCTIONS;
-			if (focus) request += `\n\nFocus for this note:\n${focus}`;
-			if (task) request += `\n\nTask for the next agent:\n${task}`;
-			const from = ctx.sessionManager.getBranch().length;
-
-			pi.sendUserMessage(request, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
-			notify("핸드오프 노트를 만드는 중...", "info");
-
-			const note = await waitForNote(ctx, from, request);
-			if (!note) {
-				notify("핸드오프 노트를 받지 못했습니다. 현재 세션은 그대로 둡니다.", "error");
-				return;
-			}
-
-			const content = task ? `${note}\n\n---\n\n## Task\n${task}` : note;
-
-			try {
-				await mkdir(dirname(file), { recursive: true });
-				await writeFile(file, content, "utf8");
-			} catch (error) {
-				notify(`handoff.md 저장에 실패했습니다: ${(error as Error).message}. 현재 세션은 그대로 둡니다.`, "error");
-				return;
-			}
-
-			const result = await ctx.newSession({
-				setup: async (sessionManager) => {
-					sessionManager.appendSessionInfo(name);
-				},
-				withSession: async (newCtx) => {
-					newCtx.ui.setEditorText("/handover");
-					if (purge && oldFile) {
-						try {
-							await unlink(oldFile);
-						} catch (error) {
-							newCtx.ui.notify(`이전 세션 삭제에 실패했습니다: ${(error as Error).message}`, "warning");
-						}
+					try {
+						await unlink(file);
+					} catch (error) {
+						newCtx.ui.notify(`핸드오프 노트 정리에 실패했습니다: ${(error as Error).message}`, "warning");
 					}
-					newCtx.ui.notify(`핸드오프를 ${file} 에 저장했습니다. Enter 로 /handover 를 실행하십시오.`, "info");
-				},
-			});
+					newCtx.ui.notify(`${name} 세션에서 이어서 진행합니다.`, "info");
+					await newCtx.sendUserMessage(task);
+					return;
+				}
+				newCtx.ui.setEditorText("/handover");
+				if (purge && oldFile) {
+					try {
+						await unlink(oldFile);
+					} catch (error) {
+						newCtx.ui.notify(`이전 세션 삭제에 실패했습니다: ${(error as Error).message}`, "warning");
+					}
+				}
+				newCtx.ui.notify(`핸드오프를 ${file} 에 저장했습니다. Enter 로 /handover 를 실행하십시오.`, "info");
+			},
+		});
 
-			if (result.cancelled) {
-				notify(`새 세션 생성이 취소되어 현재 세션을 그대로 둡니다. 노트는 ${file} 에 남아 있습니다.`, "info");
+		if (result.cancelled) {
+			notify(`새 세션 생성이 취소되어 현재 세션을 그대로 둡니다. 노트는 ${file} 에 남아 있습니다.`, "info");
+			return;
+		}
+		return true;
+	};
+
+	pi.registerCommand("handoff", {
+		description: `Save a handoff note to .pi/handoff.md and move to a named new session (usage: ${USAGE})`,
+		handler: async (args, ctx) => {
+			const parsed = parseHandoffArgs(args);
+			if (!parsed) {
+				ctx.ui.notify(`이름이 없거나 옵션 형식이 잘못되었습니다. 사용법: ${USAGE}`, "warning");
 				return;
+			}
+			if (auto.busy) {
+				ctx.ui.notify("이미 핸드오프를 진행 중입니다.", "warning");
+				return;
+			}
+			auto.busy = true;
+			try {
+				await runHandoff(parsed, ctx);
+			} catch (error) {
+				if (auto.disposed) throw error;
+				ctx.ui.notify(`핸드오프 실패: ${(error as Error).message}`, "error");
+			} finally {
+				auto.busy = false;
 			}
 		},
 	});
