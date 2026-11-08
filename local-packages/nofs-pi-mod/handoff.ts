@@ -230,7 +230,8 @@ export default function (pi: ExtensionAPI) {
 			e.type === "custom" && e.customType === LINEAGE_ENTRY) : undefined;
 		const root = lineage?.type === "custom" ? (lineage.data as { rootSession?: string } | undefined)?.rootSession : undefined;
 		// 자동 전환은 같은 기준 세션 아래에 형제로 만들고, 직전 세션은 별도로 기록한다.
-		const parentSession = automatic && typeof root === "string" && root ? root : oldFile;
+		// 수동 전환은 부모 없이 완전히 별개의 세션으로 만든다.
+		const parentSession = !automatic ? undefined : typeof root === "string" && root ? root : oldFile;
 		const result = await ctx.newSession({
 			parentSession,
 			setup: async (sessionManager) => {
