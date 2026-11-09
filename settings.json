@@ -37,7 +37,8 @@
     "git:github.com/earendil-works/pi-review",
     "npm:@yusukeshib/pi-stash",
     "npm:pi-context-view",
-    "npm:@dietrichgebert/ponytail"
+    "npm:@dietrichgebert/ponytail",
+    "npm:@mjakl/pi-subagent"
   ],
   "autocompleteMaxVisible": 5,
   "defaultTools": [
