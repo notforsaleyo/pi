@@ -14,3 +14,7 @@ Shift+Tab 으로 도는 에이전트 모드: PLAN → SPEC → BASH.
 
 - 시스템 프롬프트(`agent_modes` 섹션)는 고정, 현재 모드는 매 요청 끝 `<system-reminder>` 로만 알린다 (프롬프트 캐시 보존).
 - 입력창 색/라벨은 `globalThis.__piAgentMode` 를 통해 `../nofs-theme/input-box.ts` 가 그린다.
+- `@mjakl/pi-subagent`의 자식 프로세스(`PI_SUBAGENT_DEPTH > 0`)에서는 이 확장을 초기화하지 않는다. 모드 규칙·reminder·단축키를 추가하지 않으며, `AGENTS.md`·역할 지침·허용 도구 설정은 그대로 적용된다.
+- 새 컨텍스트(`initialContext: "empty"`) 기준이다. 부모 이력을 복사하거나 기존 자식 세션을 이어 쓰면 과거 모드 내용이 남을 수 있으며, 이 확장은 그 내용을 제거하지 않는다.
+
+검증: `node --experimental-strip-types --test local-packages/nofs-agent-modes/index.test.ts`

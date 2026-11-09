@@ -99,6 +99,9 @@ export function annotateMessages(messages: any[], changes: { at: number; mode: M
 }
 
 export default function (pi: ExtensionAPI) {
+	// Subagents follow their task, role, and project instructions without interactive modes.
+	if (Number(process.env.PI_SUBAGENT_DEPTH) > 0) return;
+
 	let mode: ModeId = DEFAULT;
 	const g = globalThis as any;
 
