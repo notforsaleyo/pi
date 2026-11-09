@@ -36,22 +36,6 @@ const IDS = Object.keys(MODES) as ModeId[]; // 선언 순서 = 순환 순서 (�
 const DEFAULT: ModeId = "plan";
 const ENTRY = "agent-mode";
 const REMINDER = "agent-mode-reminder";
-const MODE_ENV = "PI_AGENT_MODE";
-
-export function resolveSubagentMode(env: NodeJS.ProcessEnv): ModeId | undefined {
-	if (env.PI_SUBAGENT_DEPTH === undefined && env.PI_SUBAGENT_STACK === undefined) return undefined;
-	try {
-		const depth = Number(env.PI_SUBAGENT_DEPTH);
-		const stack: unknown = JSON.parse(env.PI_SUBAGENT_STACK ?? "null");
-		if (Number.isInteger(depth) && depth > 0 && Array.isArray(stack) && stack.at(-1) === "worker") {
-			const inherited = env[MODE_ENV];
-			if (IDS.includes(inherited as ModeId)) return inherited as ModeId;
-		}
-	} catch {
-		// Malformed delegation metadata must not grant implementation mode.
-	}
-	return DEFAULT;
-}
 
 const MODES_PROMPT = `You operate in one of three modes: PLAN, SPEC, BASH. The user switches modes. The active mode is stated in a <system-reminder> at the end of the latest user turn, e.g. <system-reminder>Current mode: PLAN</system-reminder>. The reminder comes from the harness, not from the user.
 
@@ -134,23 +118,15 @@ export default function (pi: ExtensionAPI) {
 
 	const setMode = (next: ModeId, ctx: ExtensionContext) => {
 		mode = next;
-		process.env[MODE_ENV] = mode;
 		pi.appendEntry(ENTRY, { mode });
 		render(ctx);
 	};
 
 	pi.on("session_start", (_event, ctx) => {
-		// Reapply this invocation's authority even when resuming a named child session.
-		const childMode = resolveSubagentMode(process.env);
-		if (childMode !== undefined) {
-			setMode(childMode, ctx);
-			return;
-		}
 		mode = DEFAULT;
 		for (const e of ctx.sessionManager.getEntries() as any[]) {
 			if (e.type === "custom" && e.customType === ENTRY && e.data?.mode in MODES) mode = e.data.mode;
 		}
-		process.env[MODE_ENV] = mode;
 		render(ctx);
 	});
 
