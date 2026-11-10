@@ -6,7 +6,7 @@ import {
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
-import { type EditorTheme, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { type EditorTheme, type TUI, type TuiMouseEvent, type TuiMouseEventResult, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	ANIM_MS,
 	setAnimationEnabled,
@@ -81,20 +81,14 @@ function boxRow(text: string, inner: number, bg: string): string {
 // ── 채팅 내 메시지 박스 (UserMessageComponent.render 를 감쌈, 실패하면 원래 모양) ──
 const ORIG = Symbol.for("pi.inputBox.userMessageRender");
 
-function renderUserMessage(inst: any, width: number): string[] {
-	const inner = width - 1; // 내용 + 오른쪽 공백 1칸
-	const md = inst.children?.[0]?.children?.[0];
-	const lines: string[] =
-		md && typeof md.render === "function" ? [...md.render(inner)] : wrapTextWithAnsi(String(inst.text ?? ""), inner);
-	while (lines.length > 1 && lines[lines.length - 1]!.replace(/\x1b\[[0-9;]*m/g, "").trim() === "") lines.pop();
-
-	const row = (l: string) => boxRow(l, inner, MSG_BG);
+function renderUserMessage(inst: UserMessageComponent, width: number, original: (width: number) => string[]): string[] {
+	const inner = width - 1;
+	// Reuse the host's Markdown, transformers, padding and shell-integration markers.
+	const lines = original.call(inst, inner);
+	const top = `${MSG_BORDER(`${LINE}${LINE} `)}${rainbowLabel(USER_NAME)}${MSG_BORDER(` ${LINE.repeat(Math.max(0, width - USER_NAME.length - 5))}`)}`;
 	return [
-		// ━━ name ━━━━━ : 이름이 위 테두리 안에 들어감
-		`${MSG_BORDER(`${LINE}${LINE} `)}${rainbowLabel(USER_NAME)}${MSG_BORDER(` ${LINE.repeat(Math.max(0, width - USER_NAME.length - 5))}`)}`,
-		row(""),
-		...(lines.length ? lines : [""]).map(row),
-		row(""),
+		truncateToWidth(top, width, ""),
+		...lines.map((line) => boxRow(line, inner, MSG_BG)),
 		MSG_BORDER(LINE.repeat(width)),
 	];
 }
@@ -106,7 +100,7 @@ function installUserMessageBox(): void {
 	proto.render = function (width: number) {
 		if (typeof width !== "number" || width < 12) return original.call(this, width);
 		try {
-			return renderUserMessage(this, width);
+			return renderUserMessage(this, width, original);
 		} catch {
 			return original.call(this, width);
 		}
@@ -206,6 +200,8 @@ export default function (pi: ExtensionAPI) {
 		if (!ctx.isIdle()) startWorkingIndicator(ctx);
 
 		class InputBox extends CustomEditor {
+			private mouseGeometry: { width: number; height: number; bodyRows: number; menuRows: number } | undefined;
+
 			constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) {
 				super(tui, theme, keybindings, { paddingX: 0 });
 				shared.requestRender = () => tui.requestRender();
@@ -246,13 +242,31 @@ export default function (pi: ExtensionAPI) {
 				return parts.join(" ");
 			}
 
+			handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+				const geometry = this.mouseGeometry;
+				if (!geometry) return super.handleMouse(event);
+				let y: number | undefined;
+				if (event.y >= 2 && event.y < 2 + geometry.bodyRows) y = event.y - 1;
+				const menuStart = geometry.bodyRows + 5;
+				if (event.y >= menuStart && event.y < menuStart + geometry.menuRows) y = event.y - 3;
+				// Decoration clicks focus the editor; drags remain available for text selection.
+				if (y === undefined || event.x >= geometry.width) {
+					return event.type === "click" && event.button === "left" ? { handled: true, focus: true } : undefined;
+				}
+				return super.handleMouse({ ...event, y, width: geometry.width, height: geometry.height });
+			}
+
 			render(width: number): string[] {
-				if (width < 12) return super.render(width);
+				if (width < 12) {
+					this.mouseGeometry = undefined;
+					return super.render(width);
+				}
 				const inner = width - 1; // 내용 + 오른쪽 공백 1칸
 				const raw = super.render(inner);
 				const visibleCount: number = (this as any).renderedVisibleLineCount ?? Math.max(1, raw.length - 2);
 				const content = raw.slice(1, 1 + visibleCount);
 				const below = raw.slice(2 + visibleCount); // 자동완성 목록
+				this.mouseGeometry = { width: inner, height: raw.length, bodyRows: visibleCount, menuRows: below.length };
 
 				const mode = g.__piAgentMode as
 					| { label: string; icon: string; rgb: RGB; style: (s: string) => string }
@@ -276,7 +290,7 @@ export default function (pi: ExtensionAPI) {
 						break;
 					}
 				}
-				const top = `${head}${border(LINE.repeat(Math.max(1, width - visibleWidth(head))))}`;
+				const top = truncateToWidth(`${head}${border(LINE.repeat(Math.max(0, width - visibleWidth(head))))}`, width, "");
 				// nf-md-handshake: 자동 핸드오프가 켜진 동안만 하단 왼쪽에 표시한다.
 				const bottomLeft = g.__piAutoHandoff?.enabled ? `${LINE}${LINE} \u{F1218} ` : "";
 				const bottom = border(bottomLeft + LINE.repeat(Math.max(0, width - visibleWidth(bottomLeft))));
@@ -286,7 +300,7 @@ export default function (pi: ExtensionAPI) {
 					? `${bold(model.name ?? model.id)}  ${dim(model.provider)}  ${thinkingLabel(pi.getThinkingLevel())}`
 					: dim("no model");
 
-				return [top, row(""), ...content.map(row), row(""), row(meta), bottom, ...below.map((l) => `  ${l}`)];
+				return [top, row(""), ...content.map(row), row(""), row(meta), bottom, ...below];
 			}
 		}
 

@@ -38,6 +38,12 @@
 
 넛지는 같은 활성화 구간에서 한 번만 보내며 `/reload`와 `/resume` 후에도 중복하지 않습니다. off 후 다시 on으로 켜면 재알림할 수 있습니다. 모델이 요청하지 않으면 강제로 전환하지 않습니다. 넛지 후 정리 중에는 기존 자동 압축을 유지하고, 전환 요청 이후와 요약 중에만 threshold 자동 압축을 막습니다. 수동 압축과 overflow 복구는 항상 유지합니다. 새 세션이 작업 없이 응답만 마치면 즉시 다시 넘기지 않습니다. 사용률은 Pi의 추정값이며, 요약에는 맥락 손실 가능성이 있습니다.
 
+## 수동 노트 전달
+
+`/handover`는 진행 중인 작업과 대기 입력이 없을 때만 노트를 전송합니다. 새 사용자 메시지가 영속 세션에 저장된 것을 확인한 뒤에만 `.pi/handoff.md`를 삭제합니다. 모델 응답이 실패해도 노트가 세션에 저장되었다면 파일은 정리됩니다.
+
+인증 실패, 입력 가로채기·변환, 비영속 세션, 저장 확인 시간 초과 시 파일을 보존합니다. 시간 초과가 전송 취소를 의미하지는 않으므로 재실행 전에 대화의 전달 여부를 확인하십시오. 전달 중 파일 내용이 달라져도 삭제하지 않습니다. 다른 프로세스가 같은 파일을 동시에 바꾸는 사용은 지원하지 않습니다.
+
 ## 세션 삭제 후 종료
 
 `/purge`는 확인창에서 승인하면 현재 세션 파일만 영구 삭제하고 `/quit`과 같은 정상 종료를 요청합니다. 다른 세션과 프로젝트 파일은 건드리지 않으며, 휴지통이나 백업을 만들지 않습니다. 저장되지 않은 세션은 확인 후 종료만 합니다.
@@ -59,7 +65,7 @@ node --test local-packages/nofs-pi-mod/*.test.ts local-packages/nofs-theme/*.tes
 ```powershell
 $env:PI_OFFLINE = '1'
 $env:PI_TEST_PACKAGE = Join-Path (npm root -g) '@earendil-works/pi-coding-agent'
-node --test local-packages/nofs-pi-mod/handoff.integration.test.ts
+node --test local-packages/nofs-pi-mod/*.integration.test.ts local-packages/nofs-theme/*.integration.test.ts extensions/tests/*.test.ts
 ```
 
 통합 테스트는 임시 디렉터리와 가짜 모델 응답만 사용합니다. 사용자 세션, 실제 API 및 활성화 상태에는 영향을 주지 않습니다.

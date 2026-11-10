@@ -12,12 +12,12 @@ import { AUTO_HANDOFF_ENTRY, AUTO_HANDOFF_TASK, nextHandoffName, registerAutoHan
 //   handoff.md 가 이미 있으면 경고만 하고 중단한다. --force 가 있으면 확인 없이 덮어쓴다.
 //   --purge 가 있으면 새 세션이 만들어진 뒤 현재 세션 파일을 바로 삭제한다 (확인 없음, 휴지통 없음).
 // /handover: handoff.md 를 읽어 메시지로 전송하고 파일을 삭제한다.
-//   삭제는 전송이 시작된 뒤에만 한다.
+//   idle 상태에서만 보내며, 원문이 영속 세션에 저장된 것을 확인한 뒤 삭제한다.
 // 프롬프트 지시문과 전체 흐름은 default-anton/pi-handoff (Apache-2.0) 를 참고했다.
 
 const TIMEOUT_MS = 5 * 60 * 1000;
 const POLL_MS = 100;
-const SEND_GRACE_MS = 1500;
+const DELIVERY_CHECK_MS = 1500;
 const MODEL_ENTRY = "handoff-model";
 const LINEAGE_ENTRY = "auto-handoff-lineage";
 const USAGE = "/handoff [다음 세션 이름] (--purge) (--force) (-- 다음 세션에서 할 일)";
@@ -306,29 +306,46 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("handover", {
-		description: "Load .pi/handoff.md as a message, then delete the file",
+		description: "Load .pi/handoff.md while idle; delete it only after durable delivery",
 		handler: async (_args, ctx) => {
+			if (auto.busy || !ctx.isIdle() || ctx.hasPendingMessages()) {
+				ctx.ui.notify("진행 중인 작업이나 대기 입력을 마친 뒤 /handover 를 실행하십시오.", "warning");
+				return;
+			}
+			auto.busy = true;
 			const file = handoffPath(ctx.cwd);
-			let text: string;
 			try {
-				text = (await readFile(file, "utf8")).trim();
-			} catch {
-				ctx.ui.notify(`${file} 이(가) 없습니다.`, "warning");
-				return;
-			}
-			if (!text) {
-				ctx.ui.notify(`${file} 이(가) 비어 있습니다.`, "warning");
-				return;
-			}
-			const sent = pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
-			// 전송이 오류 없이 시작됐다고 볼 수 있을 때까지 기다린 뒤 삭제한다.
-			await Promise.race([sent, sleep(SEND_GRACE_MS)]);
-			try {
-				await unlink(file);
+				const raw = await readFile(file, "utf8");
+				const text = raw.trim();
+				if (!text) {
+					ctx.ui.notify(`${file} 이(가) 비어 있습니다.`, "warning");
+					return;
+				}
+				const sessionFile = ctx.sessionManager.getSessionFile();
+				const sessionId = ctx.sessionManager.getSessionId();
+				const previous = new Set(ctx.sessionManager.getBranch().map((entry) => entry.id));
+				pi.sendUserMessage(text);
+				// sendUserMessage is fire-and-forget; only a new persisted user entry proves delivery.
+				const deadline = Date.now() + DELIVERY_CHECK_MS;
+				while (!auto.disposed && Date.now() < deadline) {
+					if (ctx.sessionManager.getSessionId() !== sessionId || ctx.sessionManager.getSessionFile() !== sessionFile) return;
+					const delivered = sessionFile && ctx.sessionManager.getBranch().some((entry) =>
+						!previous.has(entry.id) && entry.type === "message" && entry.message.role === "user" && messageText(entry) === text);
+					if (delivered) {
+						// Do not remove a note replaced while delivery was pending.
+						if (await readFile(file, "utf8") === raw) await unlink(file);
+						else ctx.ui.notify("핸드오프 파일이 변경되어 삭제하지 않았습니다.", "warning");
+						return;
+					}
+					if (!sessionFile) break;
+					await sleep(POLL_MS);
+				}
+				if (!auto.disposed) ctx.ui.notify("노트의 영속 저장을 확인하지 못해 파일을 보존했습니다. 전달 여부를 확인한 뒤 재시도하십시오.", "warning");
 			} catch (error) {
-				ctx.ui.notify(`handoff.md 삭제에 실패했습니다: ${(error as Error).message}`, "warning");
+				if (!auto.disposed) ctx.ui.notify(`핸드오프 전달 또는 파일 정리에 실패했습니다: ${(error as Error).message}`, "warning");
+			} finally {
+				auto.busy = false;
 			}
-			await sent;
 		},
 	});
 }

@@ -31,21 +31,17 @@ const MISSING: Record<string, string> = {
 }
 
 // find는 C:\Windows\System32\find.exe(문자열 검색 도구)라서 bash의 find 인자로는 항상 실패한다.
-// 파이프 뒤에서 문자열을 거르는 용도(`x | find "foo"`)는 정상이므로 파이프 뒤는 통과시킨다.
+// 정상 find.exe 호출은 허용하고, 명확한 Unix 전용 옵션만 차단한다.
 const FIND_MSG = "the find tool (file search)"
 
-type Segment = { text: string; afterPipe: boolean }
-
-// 따옴표를 인식해서 ; && || | 개행으로 명령을 나눈다.
-function splitSegments(cmd: string): Segment[] {
-  const segs: Segment[] = []
+// 따옴표와 주석을 인식해서 ; && || | 개행으로 명령을 나눈다.
+function splitSegments(cmd: string): string[] {
+  const segs: string[] = []
   let buf = ""
   let quote: "'" | '"' | null = null
-  let afterPipe = false
-  const push = (sepIsPipe: boolean) => {
-    segs.push({ text: buf, afterPipe })
+  const push = () => {
+    segs.push(buf)
     buf = ""
-    afterPipe = sepIsPipe
   }
   for (let i = 0; i < cmd.length; i++) {
     const ch = cmd[i]
@@ -60,29 +56,40 @@ function splitSegments(cmd: string): Segment[] {
     }
     if (ch === "`") {
       buf += ch + (cmd[++i] ?? "")
+    } else if (ch === "#" && (!buf || /\s$/.test(buf))) {
+      // A line comment ends at the newline, not at a separator inside it.
+      while (i + 1 < cmd.length && cmd[i + 1] !== "\n") i++
+    } else if (ch === "<" && cmd[i + 1] === "#") {
+      let depth = 1
+      i++
+      while (depth && i + 1 < cmd.length) {
+        i++
+        if (cmd[i] === "<" && cmd[i + 1] === "#") { depth++; i++ }
+        else if (cmd[i] === "#" && cmd[i + 1] === ">") { depth--; i++ }
+      }
+      buf += " "
     } else if (ch === "'" || ch === '"') {
       quote = ch
       buf += ch
     } else if (ch === ";" || ch === "\n") {
-      push(false)
-    } else if (ch === "&" && cmd[i + 1] === "&") {
+      push()
+    } else if ((ch === "&" && cmd[i + 1] === "&") || (ch === "|" && cmd[i + 1] === "|")) {
       i++
-      push(false)
-    } else if (ch === "|" && cmd[i + 1] === "|") {
-      i++
-      push(false)
+      push()
     } else if (ch === "|") {
-      push(true)
+      push()
     } else {
       buf += ch
     }
   }
-  segs.push({ text: buf, afterPipe })
+  segs.push(buf)
   return segs
 }
 
 function firstToken(segText: string): { name: string; rest: string } | null {
+  const invocation = /^\s*&\s*/.test(segText)
   const s = segText.replace(/^[\s&]+/, "")
+  if (!invocation && /^["']/.test(s)) return null
   const m = s.match(/^("[^"]+"|'[^']+'|[^\s]+)([\s\S]*)$/)
   if (!m) return null
   const name = m[1].replace(/^["']|["']$/g, "").toLowerCase()
@@ -94,14 +101,16 @@ function firstToken(segText: string): { name: string; rest: string } | null {
 // 반드시 실패하는 명령이면 차단 사유를 돌려준다.
 function findViolation(cmd: string): string | null {
   for (const seg of splitSegments(cmd)) {
-    const tok = firstToken(seg.text)
+    const tok = firstToken(seg)
     if (!tok) continue
     const { name, rest } = tok
 
     if (name in MISSING) {
       return `'${name}' does NOT EXIST on this Windows environment and will ALWAYS fail. Use: ${MISSING[name]}.`
     }
-    if (name === "find" && !seg.afterPipe) {
+    if (name === "find" && (rest.match(/"[^"]*"|'[^']*'|[^\s]+/g) ?? []).some(
+      (arg) => /^-(name|iname|type|maxdepth|mindepth|exec|execdir|print|print0|delete)$/.test(arg),
+    )) {
       return `'find' is find.exe (string search), NOT bash find. It will ALWAYS fail with bash arguments. Use: ${FIND_MSG}.`
     }
     if ((name === "rm" || name === "rmdir") && /(^|\s)-(rf|fr)(\s|$)/i.test(rest)) {
