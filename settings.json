@@ -29,7 +29,6 @@
   "packages": [
     "npm:pi-web-search",
     "npm:@juicesharp/rpiv-ask-user-question",
-    "npm:@gotgenes/pi-anthropic-auth",
     "npm:@sreetej510/pi-usage",
     "./local-packages/nofs-agent-modes",
     "./local-packages/nofs-theme",
@@ -38,7 +37,8 @@
     "npm:@yusukeshib/pi-stash",
     "npm:pi-context-view",
     "npm:@dietrichgebert/ponytail",
-    "npm:@mjakl/pi-subagent"
+    "npm:@mjakl/pi-subagent",
+    "git:github.com/notforsaleyo/nofs-pi-anthropic-auth"
   ],
   "autocompleteMaxVisible": 5,
   "defaultTools": [
@@ -66,6 +66,7 @@
   },
   "extensionChangelogVersions": {
     "{\"source\":\"npm:@gotgenes/pi-anthropic-auth\",\"scope\":\"user\"}": "3.4.4",
-    "{\"source\":\"npm:pi-context-view\",\"scope\":\"user\"}": "0.8.3"
+    "{\"source\":\"npm:pi-context-view\",\"scope\":\"user\"}": "0.8.3",
+    "{\"source\":\"git:github.com/notforsaleyo/nofs-pi-anthropic-auth\",\"scope\":\"user\"}": "3.4.4"
   }
 }
