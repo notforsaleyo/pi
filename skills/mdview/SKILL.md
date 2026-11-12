@@ -5,7 +5,7 @@ description: Show the user rendered Markdown in a viewer pane beside the agent's
 
 # mdview: Markdown viewer pane in Herdr
 
-Works only inside a Herdr app terminal. If `HC_TERMINAL_ID` is not set, do not use this skill; answer in the terminal instead. Inside Herdr it works from any space and tab.
+Works inside a local or remote Herdr app terminal. If `HC_TERMINAL_ID` is not set, do not use this skill; answer in the terminal instead. Run show.ps1 on the terminal's own machine. It uses hc, not a local Herdr window; the displaying window must mount mdview-bridge (configured in nofs-sharp).
 
 ## Show
 
@@ -32,10 +32,12 @@ pwsh -NoProfile -File ~/.config/herdr-app/mods/mdview/show.ps1 -Path <file.md>
 ## What renders
 
 - Headings, emphasis, inline code, links, lists (nested), numbered lists, quotes, tables, fenced code blocks.
-- Images: `![alt](path)` on local files, relative to the .md file (`-Path`) or to the current folder (pipe, `-Text`), or absolute. They are copied into the viewer's folder automatically.
+- Images: `![alt](path)` resolves relative to the .md file (`-Path`) or current folder (pipe, `-Text`), or accepts an absolute path. You can also pass an image directly with `-Path image.gif` (PNG/JPEG/GIF/WebP/BMP/SVG). Limit: 4 MiB per image. Local and dustrock GIF animation are verified; playback is native, without playback controls. Remote image transfer requires pwsh on both the source machine and the displaying computer.
 - Not supported: web images (`http...`, shown as a note), Mermaid or other diagrams (shown as code), HTML.
 
 ## Files
 
-- The document is written to `~/.config/herdr-app/.mdview/<tabId>.md`, one per tab, overwritten on every call; images go to `.mdview/<tabId>/` and are replaced on every call. Files of closed tabs are deleted on the next call. Nothing else to clean up.
+- On the caller's machine, the document is written to `~/.config/herdr-app/.mdview/<tabId>.md`, one per tab, overwritten on every call. Images go to `.mdview/<tabId>/`; caches and closed-tab documents are retained.
+- The script waits up to 30 seconds for a receiver reply. If it times out, check that the displaying window is connected to this machine and its current layout mounts mdview-bridge. Do not start a Herdr window on the remote computer as a workaround.
+- Remote documents are snapshots; call the script again to refresh. Input limit: 900 KB. Only one receiving window per source terminal is currently supported.
 - Details: `~/.config/herdr-app/mods/mdview/README.md`.
