@@ -13,6 +13,24 @@ export const fg = (rgb: RGB, s: string) => `\x1b[38;2;${rgb[0]};${rgb[1]};${rgb[
 export const bold = (s: string) => `\x1b[1m${s}\x1b[22m`;
 export const dim = (s: string) => `\x1b[2m${s}\x1b[22m`;
 
+// Empty circle, then one additional eighth per 12.5% of context capacity.
+const CONTEXT_STEPS: [string, RGB][] = [
+	["\u{F0766}", [128, 128, 128]],
+	["\u{F0A9E}", BLUE],
+	["\u{F0A9F}", TEAL],
+	["\u{F0AA0}", GREEN],
+	["\u{F0AA1}", [130, 160, 40]],
+	["\u{F0AA2}", YELLOW],
+	["\u{F0AA3}", ORANGE],
+	["\u{F0AA4}", [230, 65, 40]],
+	["\u{F0AA5}", RED],
+];
+
+export function contextStep(percent: number): [string, RGB] {
+	const step = Number.isFinite(percent) ? Math.floor(Math.min(100, Math.max(0, percent)) / 12.5) : 0;
+	return CONTEXT_STEPS[step]!;
+}
+
 const RAINBOW: RGB[] = [
 	[230, 57, 70],
 	[244, 140, 6],

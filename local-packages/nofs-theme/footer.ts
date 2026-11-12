@@ -2,7 +2,7 @@ import { basename } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { BLUE, fg, GREEN, RED, YELLOW } from "./colors.ts";
+import { BLUE, contextStep, fg, GREEN, RED, YELLOW } from "./colors.ts";
 import { gitLabel, watchGitStatus, type GitStatus } from "./footer-git.ts";
 
 // One-line footer:
@@ -13,7 +13,6 @@ const ICON = {
 	folder: "\uf07b",
 	branch: "\uf126",
 	noGit: "\uf05e",
-	context: "\uf2db",
 	cache: "\uf1c0",
 	cacheRecent: "\uf017",
 };
@@ -110,7 +109,10 @@ export default function (pi: ExtensionAPI) {
 				const current = context?.tokens == null ? "--" : fmt(context.tokens);
 				const capacity = context?.contextWindow ?? ctx.model?.contextWindow;
 				const total = capacity == null ? "--" : fmt(capacity);
-				const right = theme.fg("text", `${ICON.context} ${current}/${total}`) + sep + ratioStyled;
+				const percent = context?.percent ?? (context?.tokens != null && capacity != null && capacity > 0
+					? context.tokens / capacity * 100 : 0);
+				const [icon, color] = contextStep(percent);
+				const right = fg(color, icon) + theme.fg("text", ` ${current}/${total}`) + sep + ratioStyled;
 
 				const lw = visibleWidth(left);
 				const mw = visibleWidth(mid);

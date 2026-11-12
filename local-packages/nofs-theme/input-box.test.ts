@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { test } from "node:test";
 import vm from "node:vm";
+import { contextStep } from "./colors.ts";
 
 const plain = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "");
 const columns = (text: string) => [...plain(text)].length;
@@ -16,6 +17,7 @@ test("input lower border shows handshake only when enabled, fits width and uses 
 	let editor: any;
 	let renders = 0;
 	const sandbox: any = {
+		contextStep,
 		CustomEditor: class {
 			render() { return ["top", "input", "bottom"]; }
 		},
@@ -51,8 +53,8 @@ test("input lower border shows handshake only when enabled, fits width and uses 
 			sandbox.__piAutoHandoff = { enabled };
 			const bottom: string = editor.render(width).at(-1);
 			assert.equal(columns(bottom), width);
-			assert.equal(plain(bottom).startsWith("━━ \u{F1218} "), enabled);
-			if (!enabled) assert.equal(plain(bottom), "━".repeat(width));
+			assert.equal(plain(bottom).startsWith("── \u{F1218} "), enabled);
+			if (!enabled) assert.equal(plain(bottom), "─".repeat(width));
 			assert.match(bottom, /^\x1b\[38;2;224;108;117m/);
 		}
 	}

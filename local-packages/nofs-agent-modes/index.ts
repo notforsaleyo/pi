@@ -19,7 +19,7 @@ const MODES = {
 	spec: {
 		label: "SPEC",
 		icon: "\uf02d", // book
-		style: esc("1;4;38;2;20;20;20;48;2;198;120;221"), // bold+underline, 보라 배경
+		style: esc("1;38;2;20;20;20;48;2;198;120;221"), // bold, 보라 배경
 		rgb: [198, 120, 221],
 	},
 	bash: {

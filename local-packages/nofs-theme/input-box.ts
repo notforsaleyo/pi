@@ -12,38 +12,29 @@ import {
 	setAnimationEnabled,
 	rainbowLabel,
 	bold,
+	contextStep,
 	dim,
 	fg,
 	formatRemaining,
-	ORANGE,
 	type RGB,
-	RED,
 	thinkingLabel,
 	timerBar,
 	timerColor,
 } from "./colors.ts";
 
 // 입력창 + 채팅 내 메시지 박스 (위아래 가로선만, 좌우 세로선 없음 → 복사할 때 안 끼게)
-//   ━━  PLAN  ━━ ctx 11% ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//   ──  PLAN  ── 󰝦 11% ───────────────────────────
 //
 //   입력 내용
 //
 //   claude-opus-4  anthropic  high
-//   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//   ────────────────────────────────────────────────
 // - 위 테두리: 에이전트 모드 라벨(nofs-agent-modes 가 globalThis.__piAgentMode 로 전달) + 컨텍스트 사용률
-// - 테두리는 모드 색, 안쪽 배경은 모드 색을 연하게 tint (라이트 테마 기준)
+// - 테두리는 모드 색, 내부 배경은 터미널 기본 배경 (모드 tint 없음)
 // - 채팅의 내 메시지: 검은 가로선 + 옅은 회색 배경, 위 테두리에 무지개 사용자 이름
 
-const LINE = "━";
-const TINT = 0.8; // 0 = 원색, 1 = 흰색. 높을수록 연함
+const LINE = "─";
 const USER_NAME = "notforsaleyo";
-
-// 컨텍스트 경고 기준 (%). Claude 처럼 컨텍스트 큰 모델 기준으로 낮게 잡음
-const CTX_LEVELS: [number, RGB][] = [
-	[25, RED],
-	[15, ORANGE],
-	[8, [190, 150, 0]],
-];
 
 // 캐시 타이머 설정 (config.json). 없거나 깨지면 기본값
 function loadTimerConfig(): { seconds: number; width: number } {
@@ -64,12 +55,6 @@ function loadTimerConfig(): { seconds: number; width: number } {
 const inputBorder = (rgb?: RGB) => (s: string) => (rgb ? fg(rgb, s) : `\x1b[37m${s}\x1b[39m`);
 const MSG_BORDER = (s: string) => `\x1b[30m${s}\x1b[39m`; // 터미널 테마 black
 const MSG_BG = "\x1b[48;2;238;238;238m"; // 옅은 회색 배경
-
-function tintBg(rgb?: RGB): string {
-	if (!rgb) return "";
-	const [r, g, b] = rgb.map((c) => Math.round(c + (255 - c) * TINT));
-	return `\x1b[48;2;${r};${g};${b}m`;
-}
 
 // 박스 한 줄: 배경만 칠함. 오른쪽 공백은 줄 끝이라 복사할 때 보통 잘림. 중간에 리셋이 나와도 배경을 다시 칠함
 function boxRow(text: string, inner: number, bg: string): string {
@@ -207,13 +192,12 @@ export default function (pi: ExtensionAPI) {
 				shared.requestRender = () => tui.requestRender();
 			}
 
-			private contextLabel(): string {
+			private contextLabel(border: (s: string) => string): string {
 				const usage = ctx.getContextUsage();
-				if (usage?.percent == null) return dim("ctx ?");
-				const pct = Math.round(usage.percent);
-				const text = `ctx ${pct}%`;
-				const color = CTX_LEVELS.find(([min]) => pct >= min)?.[1];
-				return bold(color ? fg(color, text) : text);
+				const [icon] = contextStep(usage?.percent ?? 0);
+				const prefix = `${border(icon)} `;
+				if (usage?.percent == null) return prefix + dim(border("?"));
+				return prefix + bold(border(`${Math.round(usage.percent)}%`));
 			}
 
 			// 캐시 워밍 아이콘 (nofs-pi-mod/cache-warmer.ts 가 globalThis.__piWarm 으로 전달). 너드 폰트 아이콘 뒤에는 공백 1칸.
@@ -271,14 +255,13 @@ export default function (pi: ExtensionAPI) {
 				const mode = g.__piAgentMode as
 					| { label: string; icon: string; rgb: RGB; style: (s: string) => string }
 					| undefined;
-				const bg = tintBg(mode?.rgb);
 				const border = inputBorder(mode?.rgb);
-				const row = (text: string) => boxRow(text, inner, bg);
+				const row = (text: string) => boxRow(text, inner, "");
 
-				// 위 테두리: ━━ [MODE] ━━ ctx N% ━━━━━━━━
+				// 위 테두리: ── [MODE] ── [context icon] N% ────────
 				const modeLabel = mode ? mode.style(` ${mode.icon} ${mode.label} `) : "";
-				const left = `${border(`${LINE}${LINE} `)}${modeLabel}${border(` ${LINE}${LINE} `)}${this.contextLabel()}${border(" ")}`;
-				// 캐시 타이머는 공간이 충분할 때만: ━━ PLAN ━━ ctx 11% ━━ 4:32 ▰▰▰▱▱ ━━━━
+				const left = `${border(`${LINE}${LINE} `)}${modeLabel}${border(` ${LINE}${LINE} `)}${this.contextLabel(border)}${border(" ")}`;
+				// 캐시 타이머는 공간이 충분할 때만: ── PLAN ── 󰝦 11% ── 4:32 ▰▰▰▱▱ ────
 				// 공간이 모자라면 워밍 아이콘부터 빼고, 그래도 안 되면 구간 전체를 뺀다.
 				let head = left;
 				for (const withWarm of [true, false]) {

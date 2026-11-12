@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
+import { contextStep, fg } from "./colors.ts";
 
 const packageDir = process.env.PI_TEST_PACKAGE;
 
@@ -38,9 +39,10 @@ test("input box preserves the installed SDK's rendering and mouse behavior", { s
   loaded.runtime.getThinkingLevel = () => "high";
   const terminal = { terminal: { rows: 40, columns: 80 }, requestRender() {} };
   let editor: any;
+  let contextPercent: number | null = 10;
   const ctx = {
     hasUI: true, mode: "tui", isIdle: () => true, model: { provider: "openai-codex", id: "test" },
-    getContextUsage: () => ({ percent: 10 }),
+    getContextUsage: () => ({ percent: contextPercent }),
     ui: {
       setWidget() {}, setWorkingIndicator() {}, theme: { fg: (_: string, s: string) => s },
       setEditorComponent(factory: Function) { editor = factory(terminal, theme.getEditorTheme(), keybindings); },
@@ -73,6 +75,61 @@ test("input box preserves the installed SDK's rendering and mouse behavior", { s
         assert(raw.includes("\x1b[1m"), "Markdown bold must be styled");
       }
     }
+  });
+
+  await t.test("prompt keeps original text styles with thin borders and no background tint", () => {
+    for (const appearance of ["dark", "light"]) {
+      sdk.initTheme(appearance, false);
+      for (const [label, rgb] of [["PLAN", [97, 175, 239]], ["SPEC", [198, 120, 221]], ["BASH", [224, 108, 117]]] as const) {
+        const border = `\x1b[38;2;${rgb.join(";")}m`;
+        const modeStyle = (s: string) => `\x1b[48;2;${rgb.join(";")}m${s}\x1b[0m`;
+        (globalThis as any).__piAgentMode = { label, icon: "", rgb, style: modeStyle };
+        (globalThis as any).__piWarm = { mode: "on" };
+        (globalThis as any).__piAutoHandoff = { enabled: true };
+        (globalThis as any).__piCacheTimerAt = Date.now();
+        ctx.model.provider = "anthropic";
+        for (const handler of loaded.extensions[0].handlers.get("model_select") ?? []) handler({ model: ctx.model }, ctx);
+        loaded.runtime.getThinkingLevel = () => "high";
+        editor.focused = true;
+        editor.setText("한글 input");
+        const lines = editor.render(100);
+        fits(lines, 100);
+        assert(lines[0].startsWith(border + "── "));
+        assert(lines[0].includes(modeStyle(`  ${label} `)));
+        assert(lines[0].includes(border + "\u{F0766}"));
+        assert(lines[0].includes("\x1b[1m" + border + "10%"));
+        assert(lines[0].includes(border + "\u{F0456} "));
+        assert(lines[0].includes("█"), "cache timer remains visible");
+        const meta = lines.at(-2)!;
+        assert(meta.includes("\x1b[1mtest\x1b[22m"));
+        assert(meta.includes("\x1b[2manthropic\x1b[22m"));
+        assert(meta.includes("\x1b[1m\x1b[38;2;190;140;0m"), "effort keeps bold yellow");
+        for (const line of lines.slice(1, -1)) {
+          assert(!/\x1b\[48[;:]/.test(line), "no input background tint");
+          assert(!line.includes("\x1b[38;2;128;128;128;49m"), "no gray override");
+        }
+        assert(lines.at(-1)!.startsWith(border + "── \u{F1218} "));
+        assert(!tui.stripTerminalSequences(lines.join("")).includes("━"));
+      }
+    }
+    sdk.initTheme("dark", false);
+    ctx.model.provider = "openai-codex";
+    loaded.runtime.getThinkingLevel = () => "high";
+  });
+
+  await t.test("top context icon matches the footer stages and keeps the percent", () => {
+    for (const percent of [0, 12.49, 12.5, 25, 37.5, 50, 62.5, 75, 87.5, 100, null]) {
+      contextPercent = percent;
+      const [icon] = contextStep(percent ?? 0);
+      const rgb = (globalThis as any).__piAgentMode.rgb;
+      const top = editor.render(100)[0];
+      assert(top.includes(fg(rgb, icon) + " "));
+      if (percent != null) assert(top.includes("\x1b[1m" + fg(rgb, `${Math.round(percent)}%`)));
+      assert(tui.stripTerminalSequences(top).includes(`${icon} ${percent == null ? "?" : Math.round(percent) + "%"}`));
+      assert(!top.includes("ctx"));
+      for (const width of [12, 17, 24, 40, 80]) fits(editor.render(width), width);
+    }
+    contextPercent = 10;
   });
 
   await t.test("registered Markdown transformers still run", () => {

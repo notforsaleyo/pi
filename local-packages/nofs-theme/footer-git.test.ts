@@ -205,16 +205,17 @@ test("real Git and filesystem watcher detect an external file creation", async (
 	}
 });
 
-test("footer renders context chip and existing cache ratios, with requested Git colors", () => {
+test("footer renders context slices and existing cache ratios, with requested Git colors", async () => {
+	const { contextStep } = await import("./colors.ts");
 	// Execute the extension against a small UI host, without loading Pi or touching the user's session.
 	const source = stripTypeScriptTypes(fs.readFileSync(new URL("./footer.ts", import.meta.url), "utf8"))
 		.replace(/^import[^;]+;\r?$/gm, "")
 		.replace(/export default function\s*\(pi\s*\)/, "function install(pi)");
-	const colors = { BLUE: [30, 100, 220], GREEN: [56, 150, 60], RED: [220, 0, 0], YELLOW: [190, 140, 0] };
+	const colors = { BLUE: [30, 100, 220], GREEN: [56, 150, 60], RED: [220, 0, 0], YELLOW: [190, 140, 0], TEAL: [0, 150, 170], ORANGE: [230, 110, 0] };
 	const colored: Array<{ color: number[]; text: string }> = [];
 	let gitChanged: (status: unknown) => void;
 	const sandbox = {
-		...colors, basename: () => "repo", gitLabel,
+		...colors, contextStep, basename: () => "repo", gitLabel,
 		fg(color: number[], text: string) { colored.push({ color, text }); return text; },
 		visibleWidth: (text: string) => text.length,
 		truncateToWidth: (text: string, width: number) => text.slice(0, width),
@@ -224,7 +225,7 @@ test("footer renders context chip and existing cache ratios, with requested Git 
 	vm.runInContext(source, sandbox);
 	const handlers = new Map();
 	let component: { render(width: number): string[]; dispose(): void };
-	let context: { tokens: number | null; contextWindow: number } | undefined = { tokens: 32100, contextWindow: 200000 };
+	let context: { tokens: number | null; contextWindow: number; percent?: number | null } | undefined = { tokens: 32100, contextWindow: 200000 };
 	const theme = { fg: (_color: string, text: string) => text };
 	const ctx = {
 		hasUI: true, cwd: "repo", model: { id: "must-not-appear", contextWindow: 200000 },
@@ -243,15 +244,31 @@ test("footer renders context chip and existing cache ratios, with requested Git 
 		gitChanged!({ branch: "main", dirty, ahead: 2, behind });
 		colored.length = 0;
 		const line = component!.render(200)[0]!;
-		assert(line.includes("\uf2db 32.1k/200.0k"));
+		assert(line.includes("\u{F0A9E} 32.1k/200.0k"));
 		assert.equal(line.match(/90\.0%/g)?.length, 2);
 		assert(!line.includes("must-not-appear") && !line.includes("999"));
 		assert.deepEqual(colored[0]!.color, color);
 	}
-	context = { tokens: null, contextWindow: 200000 };
-	assert(component!.render(200)[0]!.includes("\uf2db --/200.0k"));
+	const icons = ["\u{F0766}", "\u{F0A9E}", "\u{F0A9F}", "\u{F0AA0}", "\u{F0AA1}", "\u{F0AA2}", "\u{F0AA3}", "\u{F0AA4}", "\u{F0AA5}"];
+	const stepColors = new Set<string>();
+	for (let step = 0; step <= 8; step++) {
+		for (const percent of [step * 12.5, Math.min(100, step * 12.5 + 12.49)]) {
+			context = { tokens: percent * 2000, contextWindow: 200000, percent };
+			colored.length = 0;
+			assert(component!.render(200)[0]!.includes(icons[step]! + " "));
+			const iconColor = colored.find((entry) => entry.text === icons[step])!;
+			stepColors.add(iconColor.color.join(","));
+		}
+	}
+	assert.equal(stepColors.size, 9, "every context slice has its own color");
+	for (const [percent, icon] of [[-10, icons[0]], [150, icons[8]], [NaN, icons[0]], [Infinity, icons[0]]] as const) {
+		context = { tokens: 0, contextWindow: 200000, percent };
+		assert(component!.render(200)[0]!.includes(icon! + " "));
+	}
+	context = { tokens: null, contextWindow: 200000, percent: null };
+	assert(component!.render(200)[0]!.includes("\u{F0766} --/200.0k"));
 	context = undefined;
-	assert(component!.render(200)[0]!.includes("\uf2db --/200.0k"));
+	assert(component!.render(200)[0]!.includes("\u{F0766} --/200.0k"));
 	gitChanged!(null);
 	assert(component!.render(200)[0]!.includes("no git"));
 	gitChanged!(undefined);
