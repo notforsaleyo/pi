@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.5.0",
+  "lastChangelogVersion": "1.5.2",
   "defaultProvider": "anthropic",
   "defaultModel": "claude-sonnet-5-5",
   "deviceId": "65b6fc87-9fa1-45df-b4ca-6cf127c54af9",
@@ -9,7 +9,8 @@
     "openai-codex/gpt-6.1-terra",
     "anthropic/claude-opus-5-5",
     "anthropic/claude-sonnet-5-5",
-    "anthropic/claude-haiku-5-5"
+    "anthropic/claude-haiku-5-5",
+    "anthropic/claude-fable-5-2"
   ],
   "fullscreenScrollbar": "always",
   "theme": "system",
@@ -22,7 +23,8 @@
   "hideThinkingBlock": false,
   "terminal": {
     "showTerminalProgress": true,
-    "clearOnShrink": false
+    "clearOnShrink": false,
+    "imageWidthCells": 80
   },
   "showHardwareCursor": true,
   "enableSkillCommands": true,
@@ -52,7 +54,7 @@
   "warnings": {
     "anthropicExtraUsage": false
   },
-  "cacheWarming": "idle",
+  "cacheWarming": "off",
   "quietStartup": true,
   "doubleEscapeAction": "none",
   "fullscreenExitOutput": "transcript",
@@ -66,7 +68,7 @@
   },
   "extensionChangelogVersions": {
     "{\"source\":\"npm:@gotgenes/pi-anthropic-auth\",\"scope\":\"user\"}": "3.4.4",
-    "{\"source\":\"npm:pi-context-view\",\"scope\":\"user\"}": "0.8.3",
+    "{\"source\":\"npm:pi-context-view\",\"scope\":\"user\"}": "0.8.4",
     "{\"source\":\"git:github.com/notforsaleyo/nofs-pi-anthropic-auth\",\"scope\":\"user\"}": "3.4.4"
   }
 }
