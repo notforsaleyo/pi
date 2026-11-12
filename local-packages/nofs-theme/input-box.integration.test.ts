@@ -132,6 +132,26 @@ test("input box preserves the installed SDK's rendering and mouse behavior", { s
     contextPercent = 10;
   });
 
+  await t.test("subscription label follows effort, keeps exact syntax, and hides as a unit when narrow", async () => {
+    ctx.model.provider = "anthropic";
+    const now = Date.now();
+    for (const handler of loaded.extensions[0].handlers.get("after_provider_response") ?? []) {
+      await handler({ status: 200, headers: {
+        "anthropic-ratelimit-unified-7d-utilization": "0.67",
+        "anthropic-ratelimit-unified-7d-reset": String((now + 7 * 86400_000 * 0.4) / 1000),
+        "anthropic-ratelimit-unified-5h-utilization": "1",
+        "anthropic-ratelimit-unified-5h-reset": String((now + 60_000) / 1000),
+      } }, ctx);
+    }
+    const wide = editor.render(100);
+    assert(tui.stripTerminalSequences(wide.at(-2)).includes("high  W-7%p 5h 100%"));
+    assert(wide.at(-2).includes(fg([220, 0, 0], "100%")));
+    for (const width of [12, 24, 40, 80, 100]) fits(editor.render(width), width);
+    assert(!tui.stripTerminalSequences(editor.render(24).at(-2)).includes("W-"));
+    ctx.model.provider = "openai-codex";
+    assert(!tui.stripTerminalSequences(editor.render(100).at(-2)).includes("5h"));
+  });
+
   await t.test("configured thinking cycle bypasses the noisy built-in handler", () => {
     let level = "high";
     let noisyCalls = 0;

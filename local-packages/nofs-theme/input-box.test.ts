@@ -4,6 +4,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { test } from "node:test";
 import vm from "node:vm";
 import { contextStep } from "./colors.ts";
+import { createSubscriptionUsage } from "./subscription-usage.ts";
 
 const plain = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "");
 const columns = (text: string) => [...plain(text)].length;
@@ -19,6 +20,7 @@ test("input lower border shows handshake only when enabled, fits width and uses 
 	let forwarded = 0;
 	let thinking = "high";
 	const sandbox: any = {
+		createSubscriptionUsage: () => createSubscriptionUsage(() => ({})),
 		getSupportedThinkingLevels: () => ["low", "high"],
 		contextStep,
 		CustomEditor: class {
@@ -80,6 +82,18 @@ test("input lower border shows handshake only when enabled, fits width and uses 
 	ctx.model.reasoning = false;
 	editor.handleInput("cycle");
 	assert.equal(forwarded, 2);
+
+	assert(plain(editor.render(160).at(-2)).includes("high  W--"));
+	assert(!plain(editor.render(30).at(-2)).includes("W--"));
+	ctx.model.provider = "anthropic";
+	const now = Date.now();
+	events.get("after_provider_response")!({ headers: {
+		"anthropic-ratelimit-unified-7d-utilization": "0.42",
+		"anthropic-ratelimit-unified-7d-reset": String((now + 7 * 86400_000 * 0.4) / 1000),
+		"anthropic-ratelimit-unified-5h-utilization": "1",
+		"anthropic-ratelimit-unified-5h-reset": String((now + 60_000) / 1000),
+	} }, ctx);
+	assert(plain(editor.render(160).at(-2)).includes("high  W+18%p 5h 100%"));
 
 	events.get("session_shutdown")!();
 });

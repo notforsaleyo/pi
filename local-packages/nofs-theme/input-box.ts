@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { createSubscriptionUsage } from "./subscription-usage.ts";
 import { type EditorTheme, type TUI, type TuiMouseEvent, type TuiMouseEventResult, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	ANIM_MS,
@@ -99,6 +100,12 @@ export default function (pi: ExtensionAPI) {
 	let animation = true;
 	let showCacheTimer = true;
 	let currentProvider: string | undefined;
+	let subscription = createSubscriptionUsage();
+	pi.on("after_provider_response", (event, ctx) => {
+		if (ctx.model?.provider !== "anthropic") return;
+		subscription.observe(event.headers);
+		g.__piInputBox?.requestRender?.();
+	});
 	// Anthropic + PI_CACHE_RETENTION=long 이면 1시간, 아니면 config 값
 	const ttlSeconds = (base: number) =>
 		currentProvider === "anthropic" && process.env.PI_CACHE_RETENTION === "long" ? 3600 : base;
@@ -163,6 +170,8 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
 		const shared = { active: true, requestRender: undefined as undefined | (() => void) };
+		subscription = createSubscriptionUsage();
+		let lastUsageRender = 0;
 		const timerCfg = loadTimerConfig();
 		g.__piCacheTimerAt = undefined;
 		g.__piInputBox = shared;
@@ -173,8 +182,11 @@ export default function (pi: ExtensionAPI) {
 			if (g.__piCacheDisplayTimer) clearInterval(g.__piCacheDisplayTimer);
 			g.__piCacheDisplayTimer = setInterval(() => {
 				const lastAssistantAt: number | undefined = g.__piCacheTimerAt;
-				if (animation || (showCacheTimer && lastAssistantAt !== undefined &&
-					Date.now() - lastAssistantAt <= ttlSeconds(timerCfg.seconds) * 1000 + 1000)) {
+				const now = Date.now();
+				const refreshUsage = now - lastUsageRender >= 5000;
+				if (refreshUsage) lastUsageRender = now;
+				if (animation || refreshUsage || (showCacheTimer && lastAssistantAt !== undefined &&
+					now - lastAssistantAt <= ttlSeconds(timerCfg.seconds) * 1000 + 1000)) {
 					shared.requestRender?.();
 				}
 			}, animation ? ANIM_MS : 1000);
@@ -295,9 +307,11 @@ export default function (pi: ExtensionAPI) {
 				const bottom = border(bottomLeft + LINE.repeat(Math.max(0, width - visibleWidth(bottomLeft))));
 
 				const model = ctx.model;
-				const meta = model
+				let meta = model
 					? `${bold(model.name ?? model.id)}  ${dim(model.provider)}  ${thinkingLabel(pi.getThinkingLevel())}`
 					: dim("no model");
+				const usage = subscription.label(model);
+				if (usage && visibleWidth(meta) + 2 + visibleWidth(usage) <= inner) meta += `  ${usage}`;
 
 				return [top, row(""), ...content.map(row), row(""), row(meta), bottom, ...below];
 			}
