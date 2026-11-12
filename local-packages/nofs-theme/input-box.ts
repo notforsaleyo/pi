@@ -6,6 +6,7 @@ import {
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { type EditorTheme, type TUI, type TuiMouseEvent, type TuiMouseEventResult, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	ANIM_MS,
@@ -185,11 +186,26 @@ export default function (pi: ExtensionAPI) {
 		if (!ctx.isIdle()) startWorkingIndicator(ctx);
 
 		class InputBox extends CustomEditor {
+			private appKeys: KeybindingsManager;
 			private mouseGeometry: { width: number; height: number; bodyRows: number; menuRows: number } | undefined;
 
 			constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) {
 				super(tui, theme, keybindings, { paddingX: 0 });
+				this.appKeys = keybindings;
 				shared.requestRender = () => tui.requestRender();
+			}
+
+			handleInput(data: string): void {
+				if (this.appKeys.matches(data, "app.thinking.cycle") && ctx.model?.reasoning) {
+					const levels = getSupportedThinkingLevels(ctx.model);
+					if (levels.length) {
+						const index = levels.indexOf(pi.getThinkingLevel() as (typeof levels)[number]);
+						pi.setThinkingLevel(levels[(index + 1) % levels.length]!);
+						shared.requestRender?.();
+						return;
+					}
+				}
+				super.handleInput(data);
 			}
 
 			private contextLabel(border: (s: string) => string): string {

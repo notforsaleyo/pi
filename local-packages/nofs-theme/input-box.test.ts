@@ -16,10 +16,14 @@ test("input lower border shows handshake only when enabled, fits width and uses 
 	const events = new Map<string, Function>();
 	let editor: any;
 	let renders = 0;
+	let forwarded = 0;
+	let thinking = "high";
 	const sandbox: any = {
+		getSupportedThinkingLevels: () => ["low", "high"],
 		contextStep,
 		CustomEditor: class {
 			render() { return ["top", "input", "bottom"]; }
+			handleInput() { forwarded++; }
 		},
 		UserMessageComponent: class { render() { return []; } },
 		readFileSync: () => '{"cacheTimerSeconds":300,"cacheTimerWidth":20}',
@@ -37,14 +41,19 @@ test("input lower border shows handshake only when enabled, fits width and uses 
 	};
 	vm.createContext(sandbox);
 	vm.runInContext(source, sandbox);
-	sandbox.install({ on: (name: string, fn: Function) => events.set(name, fn), registerCommand() {}, getThinkingLevel: () => "high" });
+	sandbox.install({
+		on: (name: string, fn: Function) => events.set(name, fn), registerCommand() {},
+		getThinkingLevel: () => thinking, setThinkingLevel: (level: string) => { thinking = level; },
+	});
 	const ctx = {
 		hasUI: true, isIdle: () => true,
-		model: { provider: "openai-codex", id: "test" },
+		model: { provider: "openai-codex", id: "test", reasoning: true },
 		getContextUsage: () => ({ percent: 10 }),
 		ui: {
 			setWidget() {}, setWorkingIndicator() {}, theme: { fg: (_: string, s: string) => s },
-			setEditorComponent(factory: Function) { editor = factory({ requestRender: () => renders++ }, {}, {}); },
+			setEditorComponent(factory: Function) {
+				editor = factory({ requestRender: () => renders++ }, {}, { matches: (data: string) => data === "cycle" });
+			},
 		},
 	};
 	events.get("session_start")!({}, ctx);
@@ -60,5 +69,17 @@ test("input lower border shows handshake only when enabled, fits width and uses 
 	}
 	sandbox.__piInputBox.requestRender();
 	assert.equal(renders, 1);
+
+	// Cycling uses the public setter, not the base handler that emits a status message.
+	editor.handleInput("cycle");
+	assert.equal(thinking, "low");
+	editor.handleInput("cycle");
+	assert.equal(thinking, "high");
+	assert.equal(forwarded, 0);
+	editor.handleInput("ordinary input");
+	ctx.model.reasoning = false;
+	editor.handleInput("cycle");
+	assert.equal(forwarded, 2);
+
 	events.get("session_shutdown")!();
 });

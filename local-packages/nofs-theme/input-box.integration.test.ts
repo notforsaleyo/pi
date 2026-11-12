@@ -132,6 +132,23 @@ test("input box preserves the installed SDK's rendering and mouse behavior", { s
     contextPercent = 10;
   });
 
+  await t.test("configured thinking cycle bypasses the noisy built-in handler", () => {
+    let level = "high";
+    let noisyCalls = 0;
+    (ctx.model as any).reasoning = true;
+    loaded.runtime.getThinkingLevel = () => level;
+    loaded.runtime.setThinkingLevel = (value: string) => { level = value; };
+    editor.onAction("app.thinking.cycle", () => noisyCalls++);
+    // This test KeybindingsManager uses the default Shift+Tab binding.
+    editor.handleInput("\x1b[Z");
+    assert.equal(level, "off");
+    assert.equal(noisyCalls, 0);
+    editor.handleInput("\x1b[Z");
+    assert.equal(level, "minimal");
+    delete (ctx.model as any).reasoning;
+    loaded.runtime.getThinkingLevel = () => "high";
+  });
+
   await t.test("registered Markdown transformers still run", () => {
     const message = new sdk.UserMessageComponent("before", undefined, 0, [
       (text: string, context: any) => {
