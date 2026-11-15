@@ -97,10 +97,18 @@ test("handover rejects busy and queued sessions before reading or sending", asyn
 	handoff({ on() {}, registerTool() {}, registerCommand: (name: string, command: any) => {
 		if (name === "handover") handler = command.handler;
 	}, sendUserMessage() { assert.fail("must not send"); } } as any);
-	for (const [idle, pending] of [[false, false], [true, true]]) {
-		let warned = false;
-		await handler("", { isIdle: () => idle, hasPendingMessages: () => pending, ui: { notify: () => { warned = true; } } });
-		assert(warned);
+	for (const args of ["", "--defer"]) {
+		for (const [idle, pending] of [[false, false], [true, true]]) {
+			let warned = false;
+			await handler(args, { isIdle: () => idle, hasPendingMessages: () => pending, ui: { notify: () => { warned = true; } } });
+			assert(warned);
+		}
+	}
+	for (const args of ["--deferr", "--defer --defer", "--defer now"]) {
+		const notices: string[] = [];
+		await handler(args, { ui: { notify: (s: string) => notices.push(s) } });
+		assert.equal(notices.length, 1);
+		assert.match(notices[0]!, /사용법:/);
 	}
 });
 

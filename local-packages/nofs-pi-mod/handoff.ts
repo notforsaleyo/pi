@@ -1,6 +1,6 @@
 import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, SessionEntry, SessionManager } from "@earendil-works/pi-coding-agent";
 import { AUTO_HANDOFF_ENTRY, AUTO_HANDOFF_TASK, nextHandoffName, registerAutoHandoff } from "./auto-handoff.ts";
 
 // /handoff [이름] (--purge) (--force) (-- 작업): 현재 세션(따뜻한 캐시)에 핸드오프 노트를 쓰게 하고,
@@ -11,8 +11,9 @@ import { AUTO_HANDOFF_ENTRY, AUTO_HANDOFF_TASK, nextHandoffName, registerAutoHan
 //   작업은 노트 작성 요청과 handoff.md 의 ## Task 양쪽에 들어간다.
 //   handoff.md 가 이미 있으면 경고만 하고 중단한다. --force 가 있으면 확인 없이 덮어쓴다.
 //   --purge 가 있으면 새 세션이 만들어진 뒤 현재 세션 파일을 바로 삭제한다 (확인 없음, 휴지통 없음).
-// /handover: handoff.md 를 읽어 메시지로 전송하고 파일을 삭제한다.
+// /handover [--defer]: handoff.md 를 읽어 메시지로 전송하고 파일을 삭제한다.
 //   idle 상태에서만 보내며, 원문이 영속 세션에 저장된 것을 확인한 뒤 삭제한다.
+//   --defer 는 실행한 명령을 사용자 메시지로 기록하고, 노트를 무응답 custom 메시지로 저장한다.
 // 프롬프트 지시문과 전체 흐름은 default-anton/pi-handoff (Apache-2.0) 를 참고했다.
 
 const TIMEOUT_MS = 5 * 60 * 1000;
@@ -306,8 +307,14 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("handover", {
-		description: "Load .pi/handoff.md while idle; delete it only after durable delivery",
-		handler: async (_args, ctx) => {
+		description: "Load .pi/handoff.md; --defer saves without calling the model (usage: /handover [--defer])",
+		getArgumentCompletions: (prefix) => "--defer".startsWith(prefix) ? [{ value: "--defer", label: "--defer" }] : [],
+		handler: async (args, ctx) => {
+			const option = args.trim();
+			if (option && option !== "--defer") {
+				ctx.ui.notify("사용법: /handover [--defer]", "warning");
+				return;
+			}
 			if (auto.busy || !ctx.isIdle() || ctx.hasPendingMessages()) {
 				ctx.ui.notify("진행 중인 작업이나 대기 입력을 마친 뒤 /handover 를 실행하십시오.", "warning");
 				return;
@@ -323,6 +330,32 @@ export default function (pi: ExtensionAPI) {
 				}
 				const sessionFile = ctx.sessionManager.getSessionFile();
 				const sessionId = ctx.sessionManager.getSessionId();
+				if (option === "--defer") {
+					if (!sessionFile) {
+						ctx.ui.notify("비영속 세션에는 노트를 보관할 수 없습니다. 파일을 보존했습니다.", "warning");
+						return;
+					}
+					if (!ctx.isIdle() || ctx.hasPendingMessages()) {
+						ctx.ui.notify("진행 중인 작업이나 대기 입력이 있어 노트를 보존했습니다.", "warning");
+						return;
+					}
+					// shortcut: custom messages cannot persist a fresh session; use the live manager until Pi exposes a no-turn user-message API.
+					const manager = ctx.sessionManager as SessionManager;
+					const requestId = manager.appendMessage({ role: "user", content: "/handover --defer", timestamp: Date.now() });
+					// The supported no-turn API updates both live model context and UI, without replacing the session.
+					pi.sendMessage({ customType: "handover-note", content: text, display: true, details: { requestId } }, { triggerTurn: false });
+					const saved = (await readFile(sessionFile, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as SessionEntry);
+					if (!saved.some((entry) => entry.type === "custom_message" && entry.customType === "handover-note" &&
+						(entry.details as { requestId?: string } | undefined)?.requestId === requestId && entry.content === text)) {
+						throw new Error("노트의 디스크 저장을 확인하지 못했습니다. 원본 파일을 보존합니다.");
+					}
+					const current = await readFile(file, "utf8");
+					if (auto.disposed || ctx.sessionManager.getSessionId() !== sessionId) return;
+					if (current === raw) await unlink(file);
+					else ctx.ui.notify("핸드오프 파일이 변경되어 삭제하지 않았습니다.", "warning");
+					if (!auto.disposed) ctx.ui.notify("노트를 세션에 저장했습니다. 모델은 호출하지 않았습니다. 종료 후 pi --resume 으로 다시 열 수 있습니다.", "info");
+					return;
+				}
 				const previous = new Set(ctx.sessionManager.getBranch().map((entry) => entry.id));
 				pi.sendUserMessage(text);
 				// sendUserMessage is fire-and-forget; only a new persisted user entry proves delivery.
