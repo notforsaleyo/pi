@@ -62,10 +62,12 @@ test("input box preserves the installed SDK's rendering and mouse behavior", { s
   });
 
   await t.test("all rows fit narrow and wide terminals; Markdown and OSC markers survive", () => {
+    // Force a visible bold style even when the test runner has no TTY.
+    const markdownTheme = { ...theme.getMarkdownTheme(), bold: (text: string) => `\x1b[1m${text}\x1b[22m` };
     for (const width of [11, 12, 17, 24, 40, 80]) {
       editor.setText("한글 wide text\nsecond line");
       fits(editor.render(width), width);
-      const message = new sdk.UserMessageComponent("**bold**\n\n`code`\n\n[link](https://example.com)", undefined, 0);
+      const message = new sdk.UserMessageComponent("**bold**\n\n`code`\n\n[link](https://example.com)", markdownTheme, 0);
       const lines = message.render(width);
       fits(lines, width);
       const raw = lines.join("\n");
@@ -75,6 +77,46 @@ test("input box preserves the installed SDK's rendering and mouse behavior", { s
         assert(raw.includes("\x1b[1m"), "Markdown bold must be styled");
       }
     }
+  });
+
+  await t.test("user messages retain original background and padding with unnamed borders", () => {
+    const samples = [
+      "아스트라", "first\n\nlast", "\n\nfirst\n\nlast\n\n", "**bold**\n\n`code`",
+      "```text\nfirst\n\nlast\n```", "1. first\n2. last", "> quote", "", "   ",
+    ];
+    for (const appearance of ["dark", "light"]) {
+      sdk.initTheme(appearance, false);
+      for (const width of [12, 24, 80]) {
+        for (const outputPad of [0, 2]) {
+          for (const text of samples) {
+            const message = new sdk.UserMessageComponent(text, undefined, outputPad);
+            const original: string[] = originalRender.value.call(message, width - 1);
+            const lines: string[] = message.render(width);
+            const plain = lines.map((line) => tui.stripTerminalSequences(line));
+            fits(lines, width);
+            assert.equal(plain[0], "─".repeat(width));
+            assert.equal(plain.at(-1), "─".repeat(width));
+            assert.deepEqual(plain.slice(1, -1).map((line) => line.trimEnd()),
+              original.map((line) => tui.stripTerminalSequences(line).trimEnd()));
+            for (const line of lines.slice(1, -1)) {
+              assert(line.startsWith("\x1b[48;2;238;238;238m"), "original gray background is restored");
+              assert(line.endsWith("\x1b[0m"), "styles do not escape the message row");
+            }
+            assert(!/\x1b\[48[;:]/.test(lines[0] + lines.at(-1)), "borders have no background");
+            const markers = /\x1b\]133;[ABC]\x07/g;
+            assert.deepEqual(lines.join("\n").match(markers), original.join("\n").match(markers));
+            assert.deepEqual(message.render(width), lines, "repeated renders must not mutate cached content");
+            if (text === "아스트라" && width - 1 - 2 * outputPad >= tui.visibleWidth(text)) {
+              assert.equal(lines.length, 5);
+              assert.equal(plain[1].trim(), "");
+              assert.equal(plain[2].trimEnd(), " ".repeat(outputPad) + text);
+              assert.equal(plain[3].trim(), "");
+            }
+          }
+        }
+      }
+    }
+    sdk.initTheme("dark", false);
   });
 
   await t.test("prompt keeps original text styles with thin borders and no background tint", () => {
@@ -115,6 +157,26 @@ test("input box preserves the installed SDK's rendering and mouse behavior", { s
     sdk.initTheme("dark", false);
     ctx.model.provider = "openai-codex";
     loaded.runtime.getThinkingLevel = () => "high";
+  });
+
+  await t.test("typing and waiting leave the prompt body and padding undecorated", (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: 10_000 });
+    t.after(() => { editor.setText(""); t.mock.timers.reset(); });
+    editor.focused = true;
+    editor.setText("before");
+    for (const input of ["한", "a", "\x1b[200~first\nlast\x1b[201~"]) {
+      editor.handleInput(input);
+      for (const elapsed of [0, 300, 1500]) {
+        t.mock.timers.tick(elapsed);
+        for (const width of [12, 24, 80]) {
+          const lines = editor.render(width);
+          fits(lines, width);
+          const area = lines.slice(1, 3 + editor.renderedVisibleLineCount);
+          assert(!area.some((line: string) => /\x1b\[48[;:]/.test(line)), "no input highlight or ripple");
+          assert.equal(lines.join("").split(tui.CURSOR_MARKER).length - 1, 1);
+        }
+      }
+    }
   });
 
   await t.test("top context icon matches the footer stages and keeps the percent", () => {

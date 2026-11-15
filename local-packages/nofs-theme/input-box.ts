@@ -12,7 +12,6 @@ import { type EditorTheme, type TUI, type TuiMouseEvent, type TuiMouseEventResul
 import {
 	ANIM_MS,
 	setAnimationEnabled,
-	rainbowLabel,
 	bold,
 	contextStep,
 	dim,
@@ -33,10 +32,9 @@ import {
 //   ────────────────────────────────────────────────
 // - 위 테두리: 에이전트 모드 라벨(nofs-agent-modes 가 globalThis.__piAgentMode 로 전달) + 컨텍스트 사용률
 // - 테두리는 모드 색, 내부 배경은 터미널 기본 배경 (모드 tint 없음)
-// - 채팅의 내 메시지: 검은 가로선 + 옅은 회색 배경, 위 테두리에 무지개 사용자 이름
+// - 채팅의 내 메시지: 검은 가로선 + 옅은 회색 배경, 사용자 이름 없음
 
 const LINE = "─";
-const USER_NAME = "notforsaleyo";
 
 // 캐시 타이머 설정 (config.json). 없거나 깨지면 기본값
 function loadTimerConfig(): { seconds: number; width: number } {
@@ -72,12 +70,8 @@ function renderUserMessage(inst: UserMessageComponent, width: number, original: 
 	const inner = width - 1;
 	// Reuse the host's Markdown, transformers, padding and shell-integration markers.
 	const lines = original.call(inst, inner);
-	const top = `${MSG_BORDER(`${LINE}${LINE} `)}${rainbowLabel(USER_NAME)}${MSG_BORDER(` ${LINE.repeat(Math.max(0, width - USER_NAME.length - 5))}`)}`;
-	return [
-		truncateToWidth(top, width, ""),
-		...lines.map((line) => boxRow(line, inner, MSG_BG)),
-		MSG_BORDER(LINE.repeat(width)),
-	];
+	const border = MSG_BORDER(LINE.repeat(width));
+	return [border, ...lines.map((line) => boxRow(line, inner, MSG_BG)), border];
 }
 
 function installUserMessageBox(): void {
