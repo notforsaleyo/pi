@@ -95,6 +95,15 @@ export default function (pi: ExtensionAPI) {
 	let showCacheTimer = true;
 	let currentProvider: string | undefined;
 	let subscription = createSubscriptionUsage();
+	let usageContext: ExtensionContext | undefined;
+	pi.events.on("usage:changed:v1", (value) => {
+		const event = value as { session?: unknown; sessionId?: string; providerId?: string; reason?: string } | null;
+		if (usageContext && event?.providerId === "openai-codex" && event.reason === "invalidated" &&
+			event.session === usageContext.sessionManager && event.sessionId === usageContext.sessionManager.getSessionId()) {
+			subscription.invalidateCodex();
+			g.__piInputBox?.requestRender?.();
+		}
+	});
 	pi.on("after_provider_response", (event, ctx) => {
 		if (ctx.model?.provider !== "anthropic") return;
 		subscription.observe(event.headers);
@@ -144,6 +153,7 @@ export default function (pi: ExtensionAPI) {
 	const supportsCacheTimer = (provider?: string) =>
 		!!provider && provider !== "openai" && !provider.startsWith("openai-");
 	pi.on("model_select", (event) => {
+		subscription.clear();
 		showCacheTimer = supportsCacheTimer(event.model.provider);
 		currentProvider = event.model.provider;
 		g.__piInputBox?.requestRender?.();
@@ -154,6 +164,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", () => {
+		subscription.clear();
+		usageContext = undefined;
 		stopWorkingIndicator();
 		restartDisplayTimer = undefined;
 		g.__piInputBox = undefined;
@@ -165,6 +177,7 @@ export default function (pi: ExtensionAPI) {
 		if (!ctx.hasUI) return;
 		const shared = { active: true, requestRender: undefined as undefined | (() => void) };
 		subscription = createSubscriptionUsage();
+		usageContext = ctx;
 		let lastUsageRender = 0;
 		const timerCfg = loadTimerConfig();
 		g.__piCacheTimerAt = undefined;
@@ -178,7 +191,10 @@ export default function (pi: ExtensionAPI) {
 				const lastAssistantAt: number | undefined = g.__piCacheTimerAt;
 				const now = Date.now();
 				const refreshUsage = now - lastUsageRender >= 5000;
-				if (refreshUsage) lastUsageRender = now;
+				if (refreshUsage) {
+					lastUsageRender = now;
+					subscription.refresh(pi, ctx, now);
+				}
 				if (animation || refreshUsage || (showCacheTimer && lastAssistantAt !== undefined &&
 					now - lastAssistantAt <= ttlSeconds(timerCfg.seconds) * 1000 + 1000)) {
 					shared.requestRender?.();

@@ -36,8 +36,6 @@ export default function (pi: ExtensionAPI) {
 	let gitMonitor: ReturnType<typeof watchGitStatus> | undefined;
 	pi.on("agent_settled", () => gitMonitor?.refresh());
 	pi.on("session_shutdown", () => gitMonitor?.dispose());
-	// Loaded as a local package listed after npm:@sreetej510/pi-usage in settings.json "packages",
-	// so this session_start handler runs after pi-usage's and its setFooter call wins.
 	pi.on("session_start", (_e, ctx) => {
 		if (!ctx.hasUI) return;
 		// Cache countdown redraws also refresh the footer; only re-sum usage when the leaf changes.

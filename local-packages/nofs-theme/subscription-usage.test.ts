@@ -12,10 +12,9 @@ const headers = (weekly = "0.42", five = "0.19") => ({
 	"anthropic-ratelimit-unified-5h-utilization": five,
 	"anthropic-ratelimit-unified-5h-reset": String((now + 60_000) / 1000),
 });
-const cache = (snapshots: unknown[], capturedAt = now) => ({ version: 1, entries: { codex: {
-	createdAt: capturedAt, report: { provider: "codex", capturedAt, snapshots },
-} } });
-const weekly = (usedPercent = 42) => ({ usedPercent, windowMinutes: 10080, resetsAt: (now + week * 0.4) / 1000 });
+const weekly = (groupId = "codex", used = 42) => ({ groupId, unit: "percent", used, windowMinutes: 10080, resetsAt: now + week * 0.4 });
+const ready = (buckets: unknown[]) => ({ status: "ready", providerId: model.provider, expiresAt: now + 300000,
+	report: { providerId: model.provider, capturedAt: now, buckets } });
 
 test("exact requested format, positive/negative/zero, 5h 100% and over-limit values", () => {
 	for (const [used, expected] of [["0.42", "W+18%p"], ["0.67", "W-7%p"], ["0.60", "W+0%p"], ["0.601", "W+0%p"]]) {
@@ -55,46 +54,47 @@ test("Anthropic headers are case insensitive and fractions become percentages", 
 	assert.equal(plain(formatSubscriptionUsage("anthropic", anthropicUsage(h, now), now)), "W+18%p 5h 19%");
 });
 
-test("Codex uses window duration, including weekly primary with no 5h limit", () => {
-	for (const snapshot of [
-		{ limitId: "codex", primary: weekly() },
-		{ limitId: "codex", primary: { usedPercent: 99, windowMinutes: 300 }, secondary: weekly() },
-	]) {
-		assert.equal(plain(formatSubscriptionUsage(model.provider, codexUsage(cache([snapshot]), model), now)), "W+18%p");
-	}
-	const noWeek = cache([{ limitId: "codex", primary: { ...weekly(), windowMinutes: 300 } }]);
-	assert.equal(plain(formatSubscriptionUsage(model.provider, codexUsage(noWeek, model), now)), "W--");
+test("normalized API buckets preserve weekly margins, group choice and unknown semantics", () => {
+	const label = (r: unknown) => plain(formatSubscriptionUsage(model.provider, codexUsage(r, model, now), now));
+	assert.equal(label(ready([{ ...weekly(), windowMinutes: 300 }, weekly()])), "W+18%p");
+	assert.equal(label(ready([weekly(), { ...weekly("extra", 67), groupLabel: "GPT Astra" }])), "W-7%p");
+	for (const bad of [null, ready([]), ready([weekly("a"), weekly("b")]), { ...ready([weekly()]), expiresAt: now },
+		ready([{ ...weekly(), used: NaN }]), ready([{ ...weekly(), windowMinutes: 300 }])]) assert.equal(label(bad), "W--");
 });
 
-test("Codex prefers model-specific limits; malformed/ambiguous cache stays unknown", () => {
-	const data = cache([{ limitId: "codex", primary: weekly() }, { limitName: "GPT Astra", primary: weekly(67) }]);
-	assert.equal(plain(formatSubscriptionUsage(model.provider, codexUsage(data, model), now)), "W-7%p");
-	for (const bad of [null, [], {}, { version: 1, entries: { codex: { report: { snapshots: "bad" } } } }, cache([{}, {}])]) {
-		assert.equal(plain(formatSubscriptionUsage(model.provider, codexUsage(bad, model), now)), "W--");
-	}
-});
-
-test("reader throttles cache access, recovers from partial writes and expires old headers", () => {
-	let reads = 0;
-	let broken = false;
-	const meter = createSubscriptionUsage(() => {
-		reads++;
-		if (broken) throw new Error("partial write");
-		return cache([{ limitId: "codex", primary: weekly() }]);
-	});
+test("scoped refresh survives cache invalidation but not a lifecycle clear", async () => {
+	let calls = 0, resolve!: (v: unknown) => void;
+	const sessionManager = { getSessionId: () => "id" };
+	const ctx = { model, sessionManager };
+	const pi = { events: { emit(channel: string, req: any) {
+		calls++;
+		assert.equal(channel, "usage:query:v1");
+		assert.equal(req.session, sessionManager);
+		assert.equal(req.sessionId, "id");
+		assert.equal(req.refresh, true);
+		assert(req.respond(new Promise(r => { resolve = r; })));
+		assert(!req.respond(undefined));
+	} } };
+	const meter = createSubscriptionUsage();
+	const refresh = (at = now) => meter.refresh(pi as any, ctx as any, at);
+	refresh(); refresh();
+	assert.equal(calls, 1);
+	resolve(ready([weekly()]));
+	await new Promise(r => setImmediate(r));
 	assert.equal(plain(meter.label(model, now)), "W+18%p");
-	meter.label(model, now + 1);
-	assert.equal(reads, 1);
-	broken = true;
-	assert.equal(plain(meter.label(model, now + 5000)), "W--");
-	broken = false;
-	assert.equal(plain(meter.label(model, now + 10_000)), "W+18%p");
-	const anthropic = { ...model, provider: "anthropic" };
-	assert.equal(plain(meter.label(anthropic, now)), "W-- 5h --");
-	meter.observe(headers(), now);
-	meter.observe({}, now + 300_000);
-	assert.equal(plain(meter.label(anthropic, now)), "W+18%p 5h 19%");
-	assert.equal(plain(meter.label(anthropic, now + 300_001)), "W-- 5h --");
-	assert.equal(reads, 3);
-	assert.equal(meter.label(undefined), "");
+	const due = now + 295_000;
+	refresh(due);
+	assert.equal(calls, 2);
+	meter.invalidateCodex();
+	assert.equal(plain(meter.label(model, due)), "W--");
+	refresh(due + 1);
+	assert.equal(calls, 2, "invalidation must not start a competing refresh");
+	resolve(ready([weekly("codex", 67)]));
+	await new Promise(r => setImmediate(r));
+	assert.equal(plain(meter.label(model, due)), "W-7%p");
+
+	meter.clear(); refresh(due); meter.clear();
+	resolve(ready([weekly()]));
+	await new Promise(r => setImmediate(r));
+	assert.equal(plain(meter.label(model, now)), "W--");
 });

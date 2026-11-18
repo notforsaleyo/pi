@@ -41,6 +41,7 @@ test("input box preserves the installed SDK's rendering and mouse behavior", { s
   let editor: any;
   let contextPercent: number | null = 10;
   const ctx = {
+    sessionManager: { getSessionId: () => "test" },
     hasUI: true, mode: "tui", isIdle: () => true, model: { provider: "openai-codex", id: "test" },
     getContextUsage: () => ({ percent: contextPercent }),
     ui: {

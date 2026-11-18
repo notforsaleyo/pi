@@ -20,7 +20,7 @@ test("input lower border shows handshake only when enabled, fits width and uses 
 	let forwarded = 0;
 	let thinking = "high";
 	const sandbox: any = {
-		createSubscriptionUsage: () => createSubscriptionUsage(() => ({})),
+		createSubscriptionUsage,
 		getSupportedThinkingLevels: () => ["low", "high"],
 		contextStep,
 		CustomEditor: class {
@@ -44,6 +44,7 @@ test("input lower border shows handshake only when enabled, fits width and uses 
 	vm.createContext(sandbox);
 	vm.runInContext(source, sandbox);
 	sandbox.install({
+		events: { on() {} },
 		on: (name: string, fn: Function) => events.set(name, fn), registerCommand() {},
 		getThinkingLevel: () => thinking, setThinkingLevel: (level: string) => { thinking = level; },
 	});

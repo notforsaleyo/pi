@@ -31,7 +31,6 @@
   "packages": [
     "npm:pi-web-search",
     "npm:@juicesharp/rpiv-ask-user-question",
-    "npm:@sreetej510/pi-usage",
     "./local-packages/nofs-agent-modes",
     "./local-packages/nofs-theme",
     "./local-packages/nofs-pi-mod",
@@ -40,7 +39,8 @@
     "npm:pi-context-view",
     "npm:@dietrichgebert/ponytail",
     "npm:@mjakl/pi-subagent",
-    "git:github.com/notforsaleyo/nofs-pi-anthropic-auth"
+    "git:github.com/notforsaleyo/nofs-pi-anthropic-auth",
+    "npm:@narumitw/pi-usage"
   ],
   "autocompleteMaxVisible": 5,
   "defaultTools": [
