@@ -42,7 +42,7 @@ test("missing, empty, invalid, expired, future and stale data never become zero 
 	}
 	assert.equal(plain(formatSubscriptionUsage("anthropic", anthropicUsage({}, now), now)), "W-- 5h --");
 	const valid = anthropicUsage(headers(), now);
-	assert.equal(plain(formatSubscriptionUsage("anthropic", valid, now + 5 * 60_000 + 1)), "W-- 5h --");
+	assert.equal(plain(formatSubscriptionUsage("anthropic", valid, now + 30 * 60_000 + 1)), "W-- 5h --");
 	assert.equal(plain(formatSubscriptionUsage("anthropic", valid, now - 1)), "W-- 5h --");
 	assert.equal(plain(formatSubscriptionUsage("anthropic", valid, now + 60_000)), "W+18%p 5h --");
 	const reset = { ...headers(), "anthropic-ratelimit-unified-7d-reset": String(now / 1000) };

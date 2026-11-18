@@ -3,7 +3,7 @@ import { dim, fg, GREEN, ORANGE, RED, YELLOW } from "./colors.ts";
 
 const WEEK_MINUTES = 7 * 24 * 60;
 const MAX_AGE_MS = 5 * 60_000;
-const ANTHROPIC_MAX_AGE_MS = 5 * 60_000;
+const ANTHROPIC_MAX_AGE_MS = 30 * 60_000;
 type UsageWindow = { usedPercent: number; resetsAt: number; capturedAt: number };
 export type UsageWindows = { weekly?: UsageWindow; fiveHour?: UsageWindow };
 type Model = { provider: string; id: string; name?: string };
