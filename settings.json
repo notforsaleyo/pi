@@ -20,7 +20,7 @@
   "markdown": {
     "mermaid": "streaming"
   },
-  "hideThinkingBlock": false,
+  "hideThinkingBlock": true,
   "terminal": {
     "showTerminalProgress": true,
     "clearOnShrink": false,
@@ -69,6 +69,7 @@
   "extensionChangelogVersions": {
     "{\"source\":\"npm:@gotgenes/pi-anthropic-auth\",\"scope\":\"user\"}": "3.4.4",
     "{\"source\":\"npm:pi-context-view\",\"scope\":\"user\"}": "0.8.4",
-    "{\"source\":\"git:github.com/notforsaleyo/nofs-pi-anthropic-auth\",\"scope\":\"user\"}": "3.4.4"
+    "{\"source\":\"git:github.com/notforsaleyo/nofs-pi-anthropic-auth\",\"scope\":\"user\"}": "3.6.0",
+    "{\"source\":\"npm:@narumitw/pi-usage\",\"scope\":\"user\"}": "0.69.3"
   }
 }
