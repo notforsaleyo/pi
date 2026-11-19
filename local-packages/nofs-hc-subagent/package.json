@@ -1,0 +1,9 @@
+{
+  "name": "nofs-hc-subagent",
+  "private": true,
+  "type": "module",
+  "description": "subagent tool: project agents (.pi/agents) run as interactive pi children in herdr terminals.",
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "promptLanguage": "English",
+  "taskNote": "Do not ask questions or wait for confirmation. Work to completion, then give your final answer.",
+  "docPathsIntro": "Read these project documents before starting:",
+  "args": ["--no-session", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-approve"],
+  "extensions": [
+    "git/github.com/notforsaleyo/nofs-pi-anthropic-auth",
+    "npm/node_modules/pi-web-search",
+    "extensions/nofs-pwsh-guard.ts",
+    "builtin:codemode"
+  ]
+}
