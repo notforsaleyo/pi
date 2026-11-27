@@ -75,5 +75,7 @@
     "cacheWarming": true,
     "compactionCosts": true,
     "reasoningDrops": true
-  }
+  },
+  "steeringMode": "all",
+  "followUpMode": "all"
 }
