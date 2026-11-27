@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.5.2",
+  "lastChangelogVersion": "1.6.1",
   "defaultProvider": "anthropic",
   "defaultModel": "claude-sonnet-5-5",
   "deviceId": "65b6fc87-9fa1-45df-b4ca-6cf127c54af9",
@@ -16,7 +16,6 @@
   "theme": "system",
   "fullscreenWheelScrollLines": "auto",
   "tuiMode": "fullscreen",
-  "showCacheMissNotices": true,
   "markdown": {
     "mermaid": "streaming"
   },
@@ -39,8 +38,8 @@
     "npm:@yusukeshib/pi-stash",
     "npm:pi-context-view",
     "npm:@dietrichgebert/ponytail",
-    "git:github.com/notforsaleyo/nofs-pi-anthropic-auth",
-    "npm:@narumitw/pi-usage"
+    "npm:@narumitw/pi-usage",
+    "npm:@gotgenes/pi-anthropic-auth"
   ],
   "autocompleteMaxVisible": 5,
   "defaultTools": [
@@ -67,9 +66,14 @@
     "enabled": true
   },
   "extensionChangelogVersions": {
-    "{\"source\":\"npm:@gotgenes/pi-anthropic-auth\",\"scope\":\"user\"}": "3.4.4",
+    "{\"source\":\"npm:@gotgenes/pi-anthropic-auth\",\"scope\":\"user\"}": "3.7.0",
     "{\"source\":\"npm:pi-context-view\",\"scope\":\"user\"}": "0.8.4",
-    "{\"source\":\"git:github.com/notforsaleyo/nofs-pi-anthropic-auth\",\"scope\":\"user\"}": "3.6.0",
-    "{\"source\":\"npm:@narumitw/pi-usage\",\"scope\":\"user\"}": "0.69.3"
+    "{\"source\":\"npm:@narumitw/pi-usage\",\"scope\":\"user\"}": "0.70.0"
+  },
+  "notices": {
+    "cacheMisses": true,
+    "cacheWarming": true,
+    "compactionCosts": true,
+    "reasoningDrops": true
   }
 }

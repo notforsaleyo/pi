@@ -4,7 +4,7 @@
   "docPathsIntro": "Read these project documents before starting:",
   "args": ["--no-session", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-approve"],
   "extensions": [
-    "git/github.com/notforsaleyo/nofs-pi-anthropic-auth",
+    "npm/node_modules/@gotgenes/pi-anthropic-auth",
     "npm/node_modules/pi-web-search",
     "extensions/nofs-pwsh-guard.ts",
     "builtin:codemode"
